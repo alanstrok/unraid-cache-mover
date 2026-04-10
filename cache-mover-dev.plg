@@ -1,0 +1,238 @@
+<?xml version='1.0' standalone='yes'?>
+<!DOCTYPE PLUGIN [
+<!ENTITY name      "cache-mover">
+<!ENTITY author    "alanstrok">
+<!ENTITY version   "2026.04.10">
+<!ENTITY launch    "Settings/cache-mover">
+<!ENTITY gitURL    "https://raw.githubusercontent.com/alanstrok/unraid-cache-mover/claude/tv-show-episode-moving-G9EMM">
+<!ENTITY pluginURL "&gitURL;/cache-mover-dev.plg">
+<!ENTITY plgPATH   "/boot/config/plugins/&name;">
+<!ENTITY plgNAME   "&name;-&version;-x86_64">
+<!ENTITY emhttp    "/usr/local/emhttp/plugins/&name;">
+<!ENTITY packages  "/boot/config/plugins/&name;/packages">
+]>
+<PLUGIN name="&name;"
+        author="&author;"
+        version="&version;"
+        launch="&launch;"
+        pluginURL="&pluginURL;"
+        min="6.12.13"
+        support="https://github.com/alanstrok/unraid-cache-mover">
+
+<CHANGES>
+ ###2026.04.10 (plex-dev branch)
+  - Plex-aware per-episode pre-caching (precache_enabled=yes)
+  - caches currently-playing episode + next N unwatched (walks across season boundaries)
+  - pre-caches On Deck items within a configurable recency window (TV + movies)
+  - evicts watched episodes on the next run, including matching sidecars
+  - preserves folder structure for Unraid /mnt/user fuse merge
+  - new UI section: Next Episodes, On Deck Max Age, Include Movies, Specials, Kodi-sidecars
+  - Jellyfin/Emby and legacy Plex behaviour are unchanged (gated by precache_enabled)
+</CHANGES>
+
+<!--
+  Dev / test build that installs directly from the alanstrok fork on the
+  claude/tv-show-episode-moving-G9EMM branch. Paths (/boot/config/plugins/cache-mover,
+  /usr/local/emhttp/plugins/cache-mover) are identical to the upstream plugin, so this
+  installs on top of (or in place of) the official cache-mover. Uninstalling and
+  reinstalling the upstream .plg reverts cleanly.
+-->
+
+<FILE Name="&emhttp;/README.md">
+ <INLINE>
+  **Cache Mover (dev build: Plex per-episode pre-cache)**
+
+  Plex-aware build of cache-mover. Caches only the currently-playing episode plus the next
+  N unwatched episodes, pre-caches recent On Deck items, and evicts watched episodes on the
+  next run to keep the cache footprint minimal while keeping it hot.
+
+  Enable in Settings -> CACHE-MOVER -> "Plex Pre-Cache Enabled: yes".
+ </INLINE>
+</FILE>
+
+<FILE Name="&plgPATH;/&plgNAME;.txz" Run="upgradepkg --install-new">
+<URL>&gitURL;/packages/&name;.txz</URL>
+<MD5>44c69613ebfca5af70bee50688aadd3a</MD5>
+</FILE>
+
+<FILE Name="&plgPATH;/fdclose.txz" Run="upgradepkg --install-new" Min="6.12.13">
+<URL>&gitURL;/packages/fdclose.txz</URL>
+</FILE>
+
+<FILE Name="&plgPATH;/gdb-15.2-x86_64-3.txz" Run="upgradepkg --install-new" Min="6.13.0">
+<URL>&gitURL;/packages/gdb-15.2-x86_64-3.txz</URL>
+</FILE>
+
+<FILE Name="&plgPATH;/gdb-11.2-x86_64-1.txz" Run="upgradepkg --install-new" Max="6.12.99">
+<URL>&gitURL;/packages/gdb-11.2-x86_64-1.txz</URL>
+</FILE>
+
+<FILE Name="&plgPATH;/guile-3.0.7-x86_64-1.txz" Run="upgradepkg --install-new" Max="6.12.99">
+<URL>&gitURL;/packages/guile-3.0.7-x86_64-1.txz</URL>
+</FILE>
+
+<FILE Name="&plgPATH;/gc-8.0.6-x86_64-1.txz" Run="upgradepkg --install-new" Max="6.12.99">
+<URL>&gitURL;/packages/gc-8.0.6-x86_64-1.txz</URL>
+</FILE>
+
+<FILE Name="&plgPATH;/elfutils-0.186-x86_64-1.txz" Run="upgradepkg --install-new" Max="6.12.99">
+<URL>&gitURL;/packages/elfutils-0.186-x86_64-1.txz</URL>
+</FILE>
+
+<FILE Run="/bin/bash">
+ <INLINE>
+  echo "Checking executable flags..."
+  if [ -f /usr/local/emhttp/plugins/cache-mover/scripts/none ]; then
+    chmod +x /usr/local/emhttp/plugins/cache-mover/scripts/*
+    echo "scripts are executable."
+  else
+    echo "script doesn't exist."
+  fi
+  touch /usr/local/emhttp/plugins/cache-mover/cache_cleaner_log.txt
+  touch /usr/local/emhttp/plugins/cache-mover/cache_mover_log.txt
+ </INLINE>
+</FILE>
+
+<FILE Run="/bin/bash">
+ <INLINE>
+  echo "+=============================================================================="
+  echo "| Checking Unraid Version ..."
+
+  unraid_version_break="7.0"
+  unraid_version=$(cat /etc/unraid-version | cut -d '"' -f 2 | cut -d '.' -f 1,2)
+
+  unraid_version_main=$(echo $unraid_version | cut -d '.' -f 1)
+  unraid_version_sub=$(echo $unraid_version | cut -d '.' -f 2)
+
+  unraid_version_break_main=$(echo $unraid_version_break | cut -d '.' -f 1)
+  unraid_version_break_sub=$(echo $unraid_version_break | cut -d '.' -f 2)
+
+  if [ $unraid_version_main -gt $unraid_version_break_main ]; then
+    current_packages="1"
+  else
+    if [ $unraid_version_main -eq $unraid_version_break_main ]; then
+      if [ $unraid_version_sub -lt $unraid_version_break_sub ]; then
+        current_packages="0"
+      else
+        current_packages="1"
+      fi
+    else
+      current_packages="0"
+    fi
+  fi
+
+  if [ $current_packages -eq 0 ]; then
+    python_package="python3-3.9.10-x86_64-1.txz"
+    libffi_package="libffi-3.3-x86_64-3.txz"
+    libuni_package="libunistring-0.9.10-x86_64-3.txz"
+    echo "| installing extra pre $unraid_version_break packages"
+    for pkg in $python_package $libffi_package $libuni_package; do
+      if [ ! -f "/boot/config/plugins/cache-mover/$pkg" ]; then
+        echo "| downloading $pkg ..."
+        curl -o /boot/config/plugins/cache-mover/$pkg https://raw.githubusercontent.com/alanstrok/unraid-cache-mover/claude/tv-show-episode-moving-G9EMM/packages/$pkg
+      fi
+    done
+    if [ ! -e /boot/config/plugins/dwpython.plg ] &amp;&amp; ! type python3 >/dev/null 2>&amp;1 &amp;&amp; ! compgen -G "/boot/extra/python*" >/dev/null 2>&amp;1; then
+      installpkg /boot/config/plugins/cache-mover/$python_package
+    else
+      echo "| python already existent"
+    fi
+    installpkg /boot/config/plugins/cache-mover/$libffi_package
+    installpkg /boot/config/plugins/cache-mover/$libuni_package
+  else
+    python_package="python3-3.12.8-x86_64-1.txz"
+    echo "| installing extra $unraid_version_break ++ packages"
+    if [ ! -f "/boot/config/plugins/cache-mover/$python_package" ]; then
+      echo "| downloading $python_package ..."
+      curl -o /boot/config/plugins/cache-mover/$python_package https://raw.githubusercontent.com/alanstrok/unraid-cache-mover/claude/tv-show-episode-moving-G9EMM/packages/$python_package
+    fi
+    if [ ! -e /boot/config/plugins/dwpython.plg ] &amp;&amp; ! type python3 >/dev/null 2>&amp;1 &amp;&amp; ! compgen -G "/boot/extra/python*" >/dev/null 2>&amp;1; then
+      installpkg /boot/config/plugins/cache-mover/$python_package
+    else
+      echo "| python already existent"
+    fi
+  fi
+  echo "+=============================================================================="
+ </INLINE>
+</FILE>
+
+<FILE Run="/bin/bash">
+ <INLINE>
+  echo "+=============================================================================="
+  echo "| default configuration if not existend"
+
+  def_settingsfile="/usr/local/emhttp/plugins/cache-mover/default_cachemoversettings"
+  settingsfile="/boot/config/plugins/cache-mover/cachemoversettings"
+
+  if test -f "$settingsfile"; then
+    echo "| $settingsfile already there, merging any missing new keys"
+    # Add any new keys from default that aren't already in the user's file.
+    for key in precache_enabled precache_episodes ondeck_max_age_days precache_specials precache_include_movies sidecar_dash; do
+      if ! grep -q "^${key}=" "$settingsfile"; then
+        line=$(grep "^${key}=" "$def_settingsfile")
+        if [ -n "$line" ]; then
+          echo "| adding missing key: $line"
+          echo "$line" >> "$settingsfile"
+        fi
+      fi
+    done
+  else
+    cp $def_settingsfile $settingsfile
+    echo "| copied default settings"
+  fi
+  echo "+=============================================================================="
+
+  echo "+=============================================================================="
+  echo "| Starting Actions and Cache Mover if crons where set ..."
+
+  touch /boot/config/plugins/cache-mover/cachemoversettings
+  sed -i 's/^script_cron_state=.*//' /boot/config/plugins/cache-mover/cachemoversettings
+  sed -i 's/^clean_cron_state=.*//' /boot/config/plugins/cache-mover/cachemoversettings
+  sed -i '/^$/d' /boot/config/plugins/cache-mover/cachemoversettings
+
+  echo 'script_cron_state=""' >> /boot/config/plugins/cache-mover/cachemoversettings
+  echo 'clean_cron_state=""' >> /boot/config/plugins/cache-mover/cachemoversettings
+
+  /usr/local/emhttp/plugins/cache-mover/scripts/cache_mover_cron.sh
+  /usr/local/emhttp/plugins/cache-mover/scripts/cache_cleaner_cron.sh
+
+  if [ ! -z "$(crontab -l | grep -i Cache_Mover)" ]; then
+    echo "| cronjob for Cache Mover started"
+    sed -i 's/^script_cron_state=.*/script_cron_state="started"/' /boot/config/plugins/cache-mover/cachemoversettings
+  else
+    echo "| cron for Cache Mover not started"
+    sed -i 's/^script_cron_state=.*/script_cron_state="stopped"/' /boot/config/plugins/cache-mover/cachemoversettings
+  fi
+
+  if [ ! -z "$(crontab -l | grep -i Cache_Cleaner)" ]; then
+    echo "| cronjob for Cache Cleaner started"
+    sed -i 's/^clean_cron_state=.*/clean_cron_state="started"/' /boot/config/plugins/cache-mover/cachemoversettings
+  else
+    echo "| cron for Cache Cleaner not started"
+    sed -i 's/^clean_cron_state=.*/clean_cron_state="stopped"/' /boot/config/plugins/cache-mover/cachemoversettings
+  fi
+  echo "+=============================================================================="
+ </INLINE>
+</FILE>
+
+<FILE Run="/bin/bash">
+<INLINE>
+rm -f $(ls &plgPATH;/&name;*.txz 2>/dev/null|grep -v '&version;')
+</INLINE>
+</FILE>
+
+<FILE Run="/bin/bash" Method="remove">
+ <INLINE>
+  echo "Removing &name;..."
+  echo "can take a while as python3 is ..."
+  removepkg &plgPATH;/*.txz  1> /dev/null
+  rm -rf &plgPATH;
+  rm -rf &emhttp;
+  sed -i 's/^script_cron_state=.*//' /boot/config/plugins/cache-mover/cachemoversettings 2>/dev/null
+  sed -i 's/^clean_cron_state=.*//' /boot/config/plugins/cache-mover/cachemoversettings 2>/dev/null
+  sed -i '/^$/d' /boot/config/plugins/cache-mover/cachemoversettings 2>/dev/null
+  echo "&name; has been removed"
+ </INLINE>
+</FILE>
+
+</PLUGIN>
