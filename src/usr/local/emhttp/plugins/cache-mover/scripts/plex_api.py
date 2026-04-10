@@ -200,42 +200,65 @@ def _path_allowed(path: str, subfolders: Optional[re.Pattern],
 
 
 def compute_targets(client, cfg) -> Dict[str, List[Dict[str, Any]]]:
-    sub_re = _filter_regex(cfg.subfolders)
+    legacy_sub_re = _filter_regex(cfg.subfolders)
+    tv_sub_re = _filter_regex(cfg.tv_subfolders) or legacy_sub_re
+    movie_sub_re = _filter_regex(cfg.movie_subfolders) or legacy_sub_re
     ft_re = _filter_regex(cfg.filetypes)
     ex_re = _filter_regex(cfg.exclusions)
+
+    def _tv_allowed(path: str) -> bool:
+        return _path_allowed(path, tv_sub_re, ft_re, ex_re)
+
+    def _movie_allowed(path: str) -> bool:
+        return _path_allowed(path, movie_sub_re, ft_re, ex_re)
 
     sessions = fetch_sessions(client)
     ondeck = fetch_ondeck(client)
 
     now = int(time.time())
-    max_age_sec = int(cfg.ondeck_max_age_days) * 86400
+    tv_max_age_sec = int(cfg.tv_ondeck_max_age_days) * 86400
+    movie_max_age_sec = int(cfg.movie_ondeck_max_age_days) * 86400
 
     active: List[Dict[str, Any]] = []
     episode_anchors: List[Dict[str, Any]] = []
     movies: List[Dict[str, Any]] = []
 
     for s in sessions:
-        if not _path_allowed(s["file"], sub_re, ft_re, ex_re):
-            continue
-        active.append({"plex_path": s["file"]})
         if s["type"] == "episode":
+            if not _tv_allowed(s["file"]):
+                continue
+            active.append({"plex_path": s["file"]})
             episode_anchors.append(s)
-        elif s["type"] == "movie" and cfg.include_movies:
-            movies.append({"plex_path": s["file"]})
+        elif s["type"] == "movie":
+            if not _movie_allowed(s["file"]):
+                continue
+            active.append({"plex_path": s["file"]})
+            if cfg.include_movies:
+                movies.append({"plex_path": s["file"]})
 
     for d in ondeck:
-        if d["last_viewed_at"] and (now - d["last_viewed_at"]) > max_age_sec:
-            continue
-        if not _path_allowed(d["file"], sub_re, ft_re, ex_re):
-            continue
         if d["type"] == "episode":
+            if d["last_viewed_at"] and (now - d["last_viewed_at"]) > tv_max_age_sec:
+                continue
+            if not _tv_allowed(d["file"]):
+                continue
             episode_anchors.append(d)
         elif d["type"] == "movie" and cfg.include_movies:
+            if d["last_viewed_at"] and (now - d["last_viewed_at"]) > movie_max_age_sec:
+                continue
+            if not _movie_allowed(d["file"]):
+                continue
             movies.append({"plex_path": d["file"]})
 
-    # Walk each unique show's allLeaves once.
-    show_keys = sorted({a["grandparent_rating_key"] for a in episode_anchors
-                        if a.get("grandparent_rating_key")})
+    # Walk each unique show's allLeaves once. Collect rating keys from the
+    # raw on-deck list too (not just post-filter) so shows with stale
+    # on-deck items still get their progression walk below.
+    show_keys = sorted(
+        {a["grandparent_rating_key"] for a in episode_anchors
+         if a.get("grandparent_rating_key")}
+        | {d["grandparent_rating_key"] for d in ondeck
+           if d["type"] == "episode" and d.get("grandparent_rating_key")}
+    )
     leaves_by_show: Dict[str, List[Dict[str, Any]]] = {}
     for k in show_keys:
         try:
@@ -251,7 +274,7 @@ def compute_targets(client, cfg) -> Dict[str, List[Dict[str, Any]]]:
         p = entry["file"]
         if p in seen_files:
             return
-        if not _path_allowed(p, sub_re, ft_re, ex_re):
+        if not _tv_allowed(p):
             return
         seen_files.add(p)
         episodes.append({
@@ -305,7 +328,8 @@ def compute_targets(client, cfg) -> Dict[str, List[Dict[str, Any]]]:
         _walk_next(leaves, anchor_idx + 1, int(cfg.precache_episodes))
 
     # Progression anchor: most-recently-watched episode per show even if
-    # nothing is currently playing. Add next N unwatched after it.
+    # nothing is currently playing. Cache "next one + X" = 1 + N total,
+    # matching the active/on-deck branch.
     for show_key, leaves in leaves_by_show.items():
         watched = [ep for ep in leaves if ep["view_count"] >= 1
                    and ep["last_viewed_at"] > 0]
@@ -315,11 +339,11 @@ def compute_targets(client, cfg) -> Dict[str, List[Dict[str, Any]]]:
         last = watched[-1]
         for i, ep in enumerate(leaves):
             if ep["file"] == last["file"]:
-                _walk_next(leaves, i + 1, int(cfg.precache_episodes))
+                _walk_next(leaves, i + 1, int(cfg.precache_episodes) + 1)
                 break
 
     # Watched eviction candidates: every allLeaves episode with viewCount>=1
-    # that passes the subfolders filter.
+    # that passes the TV subfolders filter.
     watched_out: List[Dict[str, Any]] = []
     watched_seen: set = set()
     for leaves in leaves_by_show.values():
@@ -329,7 +353,7 @@ def compute_targets(client, cfg) -> Dict[str, List[Dict[str, Any]]]:
             p = ep["file"]
             if p in watched_seen:
                 continue
-            if not _path_allowed(p, sub_re, ft_re, ex_re):
+            if not _tv_allowed(p):
                 continue
             watched_seen.add(p)
             watched_out.append({"plex_path": p})
@@ -360,9 +384,13 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--token", default="")
     ap.add_argument("--precache-episodes", dest="precache_episodes", default="2")
     ap.add_argument("--ondeck-max-age-days", dest="ondeck_max_age_days", default="7")
+    ap.add_argument("--tv-ondeck-max-age-days", dest="tv_ondeck_max_age_days", default="")
+    ap.add_argument("--movie-ondeck-max-age-days", dest="movie_ondeck_max_age_days", default="")
     ap.add_argument("--include-movies", dest="include_movies", default="yes")
     ap.add_argument("--include-specials", dest="include_specials", default="no")
     ap.add_argument("--subfolders", default="")
+    ap.add_argument("--tv-subfolders", dest="tv_subfolders", default="")
+    ap.add_argument("--movie-subfolders", dest="movie_subfolders", default="")
     ap.add_argument("--filetypes", default="")
     ap.add_argument("--exclusions", default="")
     ap.add_argument("--fixture", default="")
@@ -370,6 +398,13 @@ def main(argv: List[str]) -> int:
 
     args.include_movies = args.include_movies.lower() == "yes"
     args.include_specials = args.include_specials.lower() == "yes"
+
+    # Legacy fallback: if TV/movie-specific flags are empty, fall back to
+    # the single --ondeck-max-age-days / --subfolders values.
+    if not args.tv_ondeck_max_age_days:
+        args.tv_ondeck_max_age_days = args.ondeck_max_age_days
+    if not args.movie_ondeck_max_age_days:
+        args.movie_ondeck_max_age_days = args.ondeck_max_age_days
 
     try:
         if args.fixture:

@@ -46,6 +46,10 @@ fi
 ### defaults for new config keys (fall back if user didn't set them)
 precache_episodes="${precache_episodes:-2}"
 ondeck_max_age_days="${ondeck_max_age_days:-7}"
+tv_ondeck_max_age_days="${tv_ondeck_max_age_days:-${ondeck_max_age_days:-14}}"
+movie_ondeck_max_age_days="${movie_ondeck_max_age_days:-${ondeck_max_age_days:-7}}"
+tv_subfolders="${tv_subfolders:-}"
+movie_subfolders="${movie_subfolders:-}"
 precache_include_movies="${precache_include_movies:-yes}"
 precache_specials="${precache_specials:-no}"
 sidecar_dash="${sidecar_dash:-yes}"
@@ -57,9 +61,13 @@ targets=$(python3 "$plex_api" targets \
     --scheme "$mediaserver_url" --token "$mediaserver_key" \
     --precache-episodes "$precache_episodes" \
     --ondeck-max-age-days "$ondeck_max_age_days" \
+    --tv-ondeck-max-age-days "$tv_ondeck_max_age_days" \
+    --movie-ondeck-max-age-days "$movie_ondeck_max_age_days" \
     --include-movies "$precache_include_movies" \
     --include-specials "$precache_specials" \
     --subfolders "$subfolders" \
+    --tv-subfolders "$tv_subfolders" \
+    --movie-subfolders "$movie_subfolders" \
     --filetypes "$filetypes" \
     --exclusions "$exclusions" 2>&1)
 rc=$?

@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "cache-mover">
 <!ENTITY author    "alanstrok">
-<!ENTITY version   "2026.04.10">
+<!ENTITY version   "2026.04.11">
 <!ENTITY launch    "Settings/cache-mover">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/alanstrok/unraid-cache-mover/claude/tv-show-episode-moving-G9EMM">
 <!ENTITY pluginURL "&gitURL;/cache-mover-dev.plg">
@@ -20,6 +20,13 @@
         support="https://github.com/alanstrok/unraid-cache-mover">
 
 <CHANGES>
+ ###2026.04.11 (plex-dev branch)
+  - TV / Movie split: separate subfolder + on-deck-age settings per media type
+  - fix progression mode: cache "next one + X" (was X) when nothing is playing
+  - UI: Plex Pre-Cache section split into TV Shows and Movies sub-sections
+  - relabel "Next Episodes to Pre-Cache" -> "Extra Episodes to Pre-Cache" (behavior unchanged)
+  - watched-eviction blast radius now scoped to tv_subfolders regex
+
  ###2026.04.10 (plex-dev branch)
   - Plex-aware per-episode pre-caching (precache_enabled=yes)
   - caches currently-playing episode + next N unwatched (walks across season boundaries)
@@ -52,7 +59,7 @@
 
 <FILE Name="&plgPATH;/&plgNAME;.txz" Run="upgradepkg --install-new">
 <URL>&gitURL;/packages/&name;.txz</URL>
-<MD5>44c69613ebfca5af70bee50688aadd3a</MD5>
+<MD5>7082aaa816ef8215b94bce215fe7b8ed</MD5>
 </FILE>
 
 <FILE Name="&plgPATH;/fdclose.txz" Run="upgradepkg --install-new" Min="6.12.13">
@@ -167,7 +174,7 @@
   if test -f "$settingsfile"; then
     echo "| $settingsfile already there, merging any missing new keys"
     # Add any new keys from default that aren't already in the user's file.
-    for key in precache_enabled precache_episodes ondeck_max_age_days precache_specials precache_include_movies sidecar_dash; do
+    for key in precache_enabled precache_episodes ondeck_max_age_days precache_specials precache_include_movies sidecar_dash tv_subfolders movie_subfolders tv_ondeck_max_age_days movie_ondeck_max_age_days; do
       if ! grep -q "^${key}=" "$settingsfile"; then
         line=$(grep "^${key}=" "$def_settingsfile")
         if [ -n "$line" ]; then

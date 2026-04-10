@@ -53,6 +53,10 @@ $cachemoversettings_ondeck_max_age_days     = isset($cachemoversettings['ondeck_
 $cachemoversettings_precache_specials       = isset($cachemoversettings['precache_specials']) ? $cachemoversettings['precache_specials'] : "no";
 $cachemoversettings_precache_include_movies = isset($cachemoversettings['precache_include_movies']) ? $cachemoversettings['precache_include_movies'] : "yes";
 $cachemoversettings_sidecar_dash            = isset($cachemoversettings['sidecar_dash']) ? $cachemoversettings['sidecar_dash'] : "yes";
+$cachemoversettings_tv_subfolders             = isset($cachemoversettings['tv_subfolders']) ? $cachemoversettings['tv_subfolders'] : "";
+$cachemoversettings_movie_subfolders          = isset($cachemoversettings['movie_subfolders']) ? $cachemoversettings['movie_subfolders'] : "";
+$cachemoversettings_tv_ondeck_max_age_days    = isset($cachemoversettings['tv_ondeck_max_age_days']) ? $cachemoversettings['tv_ondeck_max_age_days'] : "14";
+$cachemoversettings_movie_ondeck_max_age_days = isset($cachemoversettings['movie_ondeck_max_age_days']) ? $cachemoversettings['movie_ondeck_max_age_days'] : "7";
 ?>
 
 <script>
@@ -230,23 +234,59 @@ Media Server Rewrites:
 Plex Pre-Cache Enabled:
 : <input type="text" name="precache_enabled" class="narrow" maxlength="3" value="<?=$cachemoversettings_precache_enabled;?>" placeholder="yes" >
     <blockquote class='inline_help'>
-        <p>yes = use Plex-aware per-episode caching (currently-playing + next N unwatched + recent On Deck only)</p>
+        <p>yes = use Plex-aware per-episode caching (currently-playing episode + extra next unwatched + recent On Deck only)</p>
         <p>empty / no = legacy single-file Plex behavior</p>
         <p>only applies when Media Server Type is plex</p>
     </blockquote>
 
-Next Episodes to Pre-Cache:
-: <input type="text" name="precache_episodes" class="narrow" maxlength="3" value="<?=$cachemoversettings_precache_episodes;?>" placeholder="2" >
+Glob Kodi-style sidecars:
+: <input type="text" name="sidecar_dash" class="narrow" maxlength="3" value="<?=$cachemoversettings_sidecar_dash;?>" placeholder="yes" >
     <blockquote class='inline_help'>
-        <p>how many unwatched episodes after the anchor episode to keep hot on the cache pool</p>
-        <p>walks across season boundaries, so "next" after the season finale is S0X+1 E01</p>
+        <p>yes = also copy sibling files matching "basename-*" (e.g. Show-thumb.jpg, -fanart.jpg)</p>
+        <p>no = only copy "basename.*" sidecars (.srt, .nfo)</p>
     </blockquote>
 
-On Deck Max Age (days):
-: <input type="text" name="ondeck_max_age_days" class="narrow" maxlength="3" value="<?=$cachemoversettings_ondeck_max_age_days;?>" placeholder="7" >
+<div class="title"><span class="left"><i class="fa fa-hand-peace-o title"></i>Plex Pre-Cache - TV Shows</span></div>
+
+TV Show subfolders:
+: <input type="text" name="tv_subfolders" class="narrow" maxlength="99" value="<?=$cachemoversettings_tv_subfolders;?>" placeholder="TVRIPS Shows Anime" >
     <blockquote class='inline_help'>
-        <p>only pre-cache On Deck items whose lastViewedAt is within this many days</p>
-        <p>keeps the cache footprint small by ignoring stale On Deck entries</p>
+        <p>space-separated folder names that contain your TV shows</p>
+        <p>episodes whose Plex file path does not match any of these are NOT pre-cached or evicted</p>
+        <p>leave empty to fall back to the general "Media subfolders" setting at the top</p>
+    </blockquote>
+
+Extra Episodes to Pre-Cache:
+: <input type="text" name="precache_episodes" class="narrow" maxlength="3" value="<?=$cachemoversettings_precache_episodes;?>" placeholder="2" >
+    <blockquote class='inline_help'>
+        <p>the currently-playing episode is ALWAYS cached. this field controls how many ADDITIONAL episodes to cache ahead of it</p>
+        <p>example: 2 = the episode you're watching + 2 upcoming episodes (3 files total)</p>
+        <p>when nothing is playing, the next unwatched episode after the last one you finished is treated as the anchor, so you get that + this many more ahead</p>
+        <p>walks across season boundaries, so after the season finale the next episode is S0X+1 E01</p>
+    </blockquote>
+
+TV On Deck Max Age (days):
+: <input type="text" name="tv_ondeck_max_age_days" class="narrow" maxlength="3" value="<?=$cachemoversettings_tv_ondeck_max_age_days;?>" placeholder="14" >
+    <blockquote class='inline_help'>
+        <p>only pre-cache TV episodes from Plex On Deck whose lastViewedAt is within this many days</p>
+        <p>longer default than movies because TV shows are typically binged over multiple sessions</p>
+    </blockquote>
+
+Include Plex Specials (Season 0):
+: <input type="text" name="precache_specials" class="narrow" maxlength="3" value="<?=$cachemoversettings_precache_specials;?>" placeholder="no" >
+    <blockquote class='inline_help'>
+        <p>yes = include parentIndex=0 specials when walking the next episodes</p>
+        <p>no = skip specials (recommended)</p>
+    </blockquote>
+
+<div class="title"><span class="left"><i class="fa fa-hand-peace-o title"></i>Plex Pre-Cache - Movies</span></div>
+
+Movie subfolders:
+: <input type="text" name="movie_subfolders" class="narrow" maxlength="99" value="<?=$cachemoversettings_movie_subfolders;?>" placeholder="Movies Films" >
+    <blockquote class='inline_help'>
+        <p>space-separated folder names that contain your movies</p>
+        <p>movies whose Plex file path does not match any of these are ignored</p>
+        <p>leave empty to fall back to the general "Media subfolders" setting at the top</p>
     </blockquote>
 
 Include Movies:
@@ -256,18 +296,11 @@ Include Movies:
         <p>movies are copied as whole folders (sidecars, extras)</p>
     </blockquote>
 
-Include Plex Specials (Season 0):
-: <input type="text" name="precache_specials" class="narrow" maxlength="3" value="<?=$cachemoversettings_precache_specials;?>" placeholder="no" >
+Movie On Deck Max Age (days):
+: <input type="text" name="movie_ondeck_max_age_days" class="narrow" maxlength="3" value="<?=$cachemoversettings_movie_ondeck_max_age_days;?>" placeholder="7" >
     <blockquote class='inline_help'>
-        <p>yes = include parentIndex=0 specials when walking next N</p>
-        <p>no = skip specials (recommended)</p>
-    </blockquote>
-
-Glob Kodi-style sidecars:
-: <input type="text" name="sidecar_dash" class="narrow" maxlength="3" value="<?=$cachemoversettings_sidecar_dash;?>" placeholder="yes" >
-    <blockquote class='inline_help'>
-        <p>yes = also copy sibling files matching "basename-*" (e.g. Show-thumb.jpg, -fanart.jpg)</p>
-        <p>no = only copy "basename.*" sidecars (.srt, .nfo)</p>
+        <p>only pre-cache movies from Plex On Deck whose lastViewedAt is within this many days</p>
+        <p>shorter default than TV because movies are large and you want to free cache space quickly</p>
     </blockquote>
 
 <div class="title"><span class="left"><i class="fa fa-hand-peace-o title"></i>Cache Mover Setup - Recycle Setup</span></div>
