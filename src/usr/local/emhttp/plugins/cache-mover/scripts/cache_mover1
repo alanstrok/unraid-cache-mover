@@ -60,6 +60,12 @@ if [ "$mediaserver_type" == "jelly" ] || [ "$mediaserver_type" == "emby" ]; then
 fi
 ### plex openfile
 if [ "$mediaserver_type" == "plex" ]; then
+	### Plex-aware per-episode pre-cache path
+	if [ "$precache_enabled" == "yes" ]; then
+		/usr/local/emhttp/plugins/cache-mover/scripts/cache_mover_plex
+		$listupdater
+		exit
+	fi
 	#echo "$mediaserver_type mode"
 	KEY=$(curl -s "$mediaserver_url://$mediaserver_host:$mediaserver_port/status/sessions?X-Plex-Token=$mediaserver_key" 2> /dev/null | grep -oP 'ratingKey="\K[^"]+' | shuf -n 1)
 	curl -s "$mediaserver_url://$mediaserver_host:$mediaserver_port/library/metadata/$KEY?X-Plex-Token=$mediaserver_key" 2> /dev/null | grep -oP 'file="\K[^"]+' | grep -E "$subfolders" | \

@@ -46,6 +46,13 @@ $cachemoversettings_mediaserver_port        = isset($cachemoversettings['mediase
 $cachemoversettings_mediaserver_key        = isset($cachemoversettings['mediaserver_key']) ? $cachemoversettings['mediaserver_key'] : "";
 $cachemoversettings_mediaserver_only        = isset($cachemoversettings['mediaserver_only']) ? $cachemoversettings['mediaserver_only'] : "";
 $cachemoversettings_rewrite_source       = isset($cachemoversettings['rewrite_source']) ? $cachemoversettings['rewrite_source'] : "";
+// Plex Pre-Cache
+$cachemoversettings_precache_enabled        = isset($cachemoversettings['precache_enabled']) ? $cachemoversettings['precache_enabled'] : "";
+$cachemoversettings_precache_episodes       = isset($cachemoversettings['precache_episodes']) ? $cachemoversettings['precache_episodes'] : "2";
+$cachemoversettings_ondeck_max_age_days     = isset($cachemoversettings['ondeck_max_age_days']) ? $cachemoversettings['ondeck_max_age_days'] : "7";
+$cachemoversettings_precache_specials       = isset($cachemoversettings['precache_specials']) ? $cachemoversettings['precache_specials'] : "no";
+$cachemoversettings_precache_include_movies = isset($cachemoversettings['precache_include_movies']) ? $cachemoversettings['precache_include_movies'] : "yes";
+$cachemoversettings_sidecar_dash            = isset($cachemoversettings['sidecar_dash']) ? $cachemoversettings['sidecar_dash'] : "yes";
 ?>
 
 <script>
@@ -216,6 +223,51 @@ Media Server Rewrites:
         <p>please check the mountpoint from your docker, compare how the host path would look like</p>
 		<p>also keep leading / trailing slashes simultan to host value</p>
 		<p>space seperated multiply values are possible in terms multi array is used ...</p>
+    </blockquote>
+
+<div class="title"><span class="left"><i class="fa fa-hand-peace-o title"></i>Cache Mover Setup - Plex Pre-Cache</span></div>
+
+Plex Pre-Cache Enabled:
+: <input type="text" name="precache_enabled" class="narrow" maxlength="3" value="<?=$cachemoversettings_precache_enabled;?>" placeholder="yes" >
+    <blockquote class='inline_help'>
+        <p>yes = use Plex-aware per-episode caching (currently-playing + next N unwatched + recent On Deck only)</p>
+        <p>empty / no = legacy single-file Plex behavior</p>
+        <p>only applies when Media Server Type is plex</p>
+    </blockquote>
+
+Next Episodes to Pre-Cache:
+: <input type="text" name="precache_episodes" class="narrow" maxlength="3" value="<?=$cachemoversettings_precache_episodes;?>" placeholder="2" >
+    <blockquote class='inline_help'>
+        <p>how many unwatched episodes after the anchor episode to keep hot on the cache pool</p>
+        <p>walks across season boundaries, so "next" after the season finale is S0X+1 E01</p>
+    </blockquote>
+
+On Deck Max Age (days):
+: <input type="text" name="ondeck_max_age_days" class="narrow" maxlength="3" value="<?=$cachemoversettings_ondeck_max_age_days;?>" placeholder="7" >
+    <blockquote class='inline_help'>
+        <p>only pre-cache On Deck items whose lastViewedAt is within this many days</p>
+        <p>keeps the cache footprint small by ignoring stale On Deck entries</p>
+    </blockquote>
+
+Include Movies:
+: <input type="text" name="precache_include_movies" class="narrow" maxlength="3" value="<?=$cachemoversettings_precache_include_movies;?>" placeholder="yes" >
+    <blockquote class='inline_help'>
+        <p>yes = also pre-cache movies that are currently playing or on the On Deck list within the max age window</p>
+        <p>movies are copied as whole folders (sidecars, extras)</p>
+    </blockquote>
+
+Include Plex Specials (Season 0):
+: <input type="text" name="precache_specials" class="narrow" maxlength="3" value="<?=$cachemoversettings_precache_specials;?>" placeholder="no" >
+    <blockquote class='inline_help'>
+        <p>yes = include parentIndex=0 specials when walking next N</p>
+        <p>no = skip specials (recommended)</p>
+    </blockquote>
+
+Glob Kodi-style sidecars:
+: <input type="text" name="sidecar_dash" class="narrow" maxlength="3" value="<?=$cachemoversettings_sidecar_dash;?>" placeholder="yes" >
+    <blockquote class='inline_help'>
+        <p>yes = also copy sibling files matching "basename-*" (e.g. Show-thumb.jpg, -fanart.jpg)</p>
+        <p>no = only copy "basename.*" sidecars (.srt, .nfo)</p>
     </blockquote>
 
 <div class="title"><span class="left"><i class="fa fa-hand-peace-o title"></i>Cache Mover Setup - Recycle Setup</span></div>
