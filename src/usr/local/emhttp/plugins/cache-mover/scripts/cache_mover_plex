@@ -16,6 +16,9 @@ plex_api="/usr/local/emhttp/plugins/cache-mover/scripts/plex_api.py"
 ### Check if another instance of this Program is running
 pidof -o %PPID -x $0 >/dev/null && echo "ERROR: Program $0 already running" && exit 1
 
+### Log any unexpected signal so we can tell if something external is killing us.
+trap 'echo "cache_mover_plex received signal at $(date \"+%H:%M:%S\")"; exit 143' INT TERM HUP
+
 ################################
 if [ "$unraid_syslog" == "yes" ]; then
 log_message() {
@@ -134,7 +137,7 @@ copy_with_sidecars() {
     fi
     shopt -u nullglob
     if [ ${#matches[@]} -gt 0 ]; then
-        $rsync_copy "${matches[@]}" "$dst_dir/"
+        $rsync_copy --partial "${matches[@]}" "$dst_dir/"
     fi
     if [ "$move_excl" == "yes" ]; then
         echo "$dst_dir" >> "$move_excl_list" 2>/dev/null
@@ -179,6 +182,30 @@ is_active() {
     [ -z "$active_list" ] && return 1
     printf "%s\n" "$active_list" | grep -Fxq "$p"
 }
+
+################################
+### 1b. Pre-populate the mover-tuning ignore list with the PREDICTED
+### target parent dirs of every target (episodes + movies). Running
+### $listupdater now - before any rsync - ensures Unraid's Mover sees
+### these paths in its ignore list and won't race us during the copies.
+################################
+if [ "$move_excl" == "yes" ]; then
+    echo "$targets" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+for key in ("episodes", "movies"):
+    for e in d.get(key, []):
+        print(e["plex_path"])
+' | while IFS= read -r plex_path; do
+        [ -z "$plex_path" ] && continue
+        host_path=$(rewrite_plex_path "$plex_path")
+        rel="${host_path#/mnt/user/}"
+        pred_dir=$(dirname "/mnt/$pool/$rel")
+        echo "$pred_dir" >> "$move_excl_list" 2>/dev/null
+    done
+    awk -i inplace '!seen[$0]++' "$move_excl_list" 2>/dev/null
+    $listupdater
+fi
 
 ################################
 ### 2. Evict watched episodes first (to free space before copying)
@@ -274,7 +301,7 @@ for m in d.get("movies", []):
     fi
     echo "pre-cache movie folder: $rsync_source/ -> $rsync_target/"
     mkdir -p "$rsync_target"
-    $rsync_copy "$rsync_source/" "$rsync_target/"
+    $rsync_copy --partial "$rsync_source/" "$rsync_target/"
     if [ "$move_excl" == "yes" ]; then
         echo "$rsync_target" >> "$move_excl_list" 2>/dev/null
         awk -i inplace '!seen[$0]++' "$move_excl_list" 2>/dev/null
