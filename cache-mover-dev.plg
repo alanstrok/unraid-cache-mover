@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "cache-mover">
 <!ENTITY author    "alanstrok">
-<!ENTITY version   "2026.04.11a">
+<!ENTITY version   "2026.04.11b">
 <!ENTITY launch    "Settings/cache-mover">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/alanstrok/unraid-cache-mover/claude/tv-show-episode-moving-G9EMM">
 <!ENTITY pluginURL "&gitURL;/cache-mover-dev.plg">
@@ -20,7 +20,9 @@
         support="https://github.com/alanstrok/unraid-cache-mover">
 
 <CHANGES>
- ###2026.04.11a (plex-dev branch)
+ ###2026.04.11b (plex-dev branch)
+  - fix memory: replace ls -l /proc/*/fd/* glob with fuser (constant memory vs hundreds of MB)
+  - fix leaking logger subshells: named FIFO with deterministic cleanup on exit/signal
   - pre-populate mover-tuning ignore list BEFORE first rsync to avoid races with Unraid Mover
   - add --partial to rsync so interrupted transfers resume
   - log when cache_mover_plex receives SIGINT / SIGTERM / SIGHUP
@@ -64,7 +66,7 @@
 
 <FILE Name="&plgPATH;/&plgNAME;.txz" Run="upgradepkg --install-new">
 <URL>&gitURL;/packages/&name;.txz</URL>
-<MD5>f64176a4bae7b021739cb51af77c16fd</MD5>
+<MD5>21e54560c828be3a2f51a336cbf54da8</MD5>
 </FILE>
 
 <FILE Name="&plgPATH;/fdclose.txz" Run="upgradepkg --install-new" Min="6.12.13">

@@ -21,12 +21,26 @@ trap 'echo "cache_mover_plex received signal at $(date \"+%H:%M:%S\")"; exit 143
 
 ################################
 if [ "$unraid_syslog" == "yes" ]; then
-log_message() {
-  while IFS= read -r line; do
+LOG_FIFO=$(mktemp -u /tmp/cm_plex_log.XXXXXX)
+mkfifo "$LOG_FIFO"
+# Logger drains the fifo in the background. It will exit when the
+# write end closes (= when the main script exits or the fifo is
+# unlinked).  Using a named fifo instead of process-substitution
+# exec > >(...) avoids orphaned subshells that can accumulate when
+# cron fires every few minutes.
+(while IFS= read -r line; do
     logger "cache-mover: plex: ${line}"
-  done
+done < "$LOG_FIFO") &
+LOG_PID=$!
+exec > "$LOG_FIFO" 2>&1
+# Clean up the fifo and logger on exit.
+cleanup_log() {
+    exec > /dev/null 2>&1
+    rm -f "$LOG_FIFO"
+    wait "$LOG_PID" 2>/dev/null
 }
-exec > >(log_message) 2>&1
+trap 'echo "cache_mover_plex received signal at $(date \"+%H:%M:%S\")"; cleanup_log; exit 143' INT TERM HUP
+trap 'cleanup_log' EXIT
 fi
 
 ### remove leading/trailing slashes on pool
@@ -224,8 +238,10 @@ for w in d.get("watched", []):
     rel="${host_path#/mnt/user/}"
     cache_file="/mnt/$pool/$rel"
     [ ! -f "$cache_file" ] && continue
-    # skip if currently open by any process
-    if ls -l /proc/[0-9]*/fd/* 2>/dev/null | grep -qF "$cache_file"; then
+    # skip if currently open by any process (fuser is O(1) vs the
+    # old ls -l /proc/*/fd/* glob which expanded tens of thousands
+    # of paths and consumed hundreds of MB on busy systems)
+    if fuser "$cache_file" >/dev/null 2>&1; then
         echo "evict skip (in use): $cache_file"
         continue
     fi
