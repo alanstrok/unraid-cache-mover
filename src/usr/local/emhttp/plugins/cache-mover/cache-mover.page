@@ -53,6 +53,7 @@ $cachemoversettings_ondeck_max_age_days     = isset($cachemoversettings['ondeck_
 $cachemoversettings_precache_specials       = isset($cachemoversettings['precache_specials']) ? $cachemoversettings['precache_specials'] : "no";
 $cachemoversettings_precache_include_movies = isset($cachemoversettings['precache_include_movies']) ? $cachemoversettings['precache_include_movies'] : "yes";
 $cachemoversettings_sidecar_dash            = isset($cachemoversettings['sidecar_dash']) ? $cachemoversettings['sidecar_dash'] : "yes";
+$cachemoversettings_precache_move           = isset($cachemoversettings['precache_move']) ? $cachemoversettings['precache_move'] : "no";
 $cachemoversettings_tv_subfolders             = isset($cachemoversettings['tv_subfolders']) ? $cachemoversettings['tv_subfolders'] : "";
 $cachemoversettings_movie_subfolders          = isset($cachemoversettings['movie_subfolders']) ? $cachemoversettings['movie_subfolders'] : "";
 $cachemoversettings_tv_ondeck_max_age_days    = isset($cachemoversettings['tv_ondeck_max_age_days']) ? $cachemoversettings['tv_ondeck_max_age_days'] : "14";
@@ -244,6 +245,14 @@ Glob Kodi-style sidecars:
     <blockquote class='inline_help'>
         <p>yes = also copy sibling files matching "basename-*" (e.g. Show-thumb.jpg, -fanart.jpg)</p>
         <p>no = only copy "basename.*" sidecars (.srt, .nfo)</p>
+    </blockquote>
+
+Move Mode:
+: <input type="text" name="precache_move" class="narrow" maxlength="3" value="<?=$cachemoversettings_precache_move;?>" placeholder="no" >
+    <blockquote class='inline_help'>
+        <p>yes = MOVE files (only one copy exists at a time). Array -> SSD when pre-caching, SSD -> array when evicting watched content</p>
+        <p>no = COPY mode (array file stays, SSD copy is deleted on eviction). Safer but uses double disk space</p>
+        <p>move-back target is controlled by "Expire Target Dir" above (typically user0 = let Unraid pick the array disk)</p>
     </blockquote>
 
 <div class="title"><span class="left"><i class="fa fa-hand-peace-o title"></i>Plex Pre-Cache - TV Shows</span></div>

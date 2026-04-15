@@ -69,8 +69,10 @@ tv_subfolders="${tv_subfolders:-}"
 movie_subfolders="${movie_subfolders:-}"
 precache_include_movies="${precache_include_movies:-yes}"
 precache_specials="${precache_specials:-no}"
+precache_move="${precache_move:-no}"
 sidecar_dash="${sidecar_dash:-yes}"
 wait_todo="${wait_todo:-120}"
+target_keephours="${target_keephours:-user0}"
 
 ### 1. fetch targets from Plex
 targets=$(python3 "$plex_api" targets \
@@ -134,7 +136,7 @@ disk_to_pool() {
     echo "${dp/$dn/$pool}"
 }
 
-### helper: copy episode file plus matching sidecars
+### helper: copy (or move) episode file plus matching sidecars
 copy_with_sidecars() {
     local diskpath="$1"
     local poolpath="$2"
@@ -151,7 +153,13 @@ copy_with_sidecars() {
     fi
     shopt -u nullglob
     if [ ${#matches[@]} -gt 0 ]; then
-        $rsync_copy --partial "${matches[@]}" "$dst_dir/"
+        if [ "$precache_move" == "yes" ]; then
+            $rsync_copy --partial --remove-source-files "${matches[@]}" "$dst_dir/"
+            # Clean up empty source dirs left after the move.
+            find "$src_dir" -maxdepth 0 -type d -empty -delete 2>/dev/null
+        else
+            $rsync_copy --partial "${matches[@]}" "$dst_dir/"
+        fi
     fi
     if [ "$move_excl" == "yes" ]; then
         echo "$dst_dir" >> "$move_excl_list" 2>/dev/null
@@ -159,7 +167,9 @@ copy_with_sidecars() {
     fi
 }
 
-### helper: remove evicted episode + sidecars, then prune empty dirs
+### helper: evict episode + sidecars from SSD.
+### In move mode: move back to the array via /mnt/$target_keephours.
+### In copy mode: just delete the SSD copy (array still has it).
 remove_with_sidecars() {
     local cache_file="$1"
     local dst_dir stem_file stem
@@ -172,14 +182,30 @@ remove_with_sidecars() {
         to_rm+=("$dst_dir/$stem"-*)
     fi
     shopt -u nullglob
-    local f
-    for f in "${to_rm[@]}"; do
-        echo "evict: $f"
-        rm -f "$f"
-        if [ "$unraid_note" == "yes" ]; then
-            /usr/local/emhttp/webGui/scripts/notify -e "Cache Mover Info" -s "Evict" -d "$f" -i "normal" &
+    if [ "$precache_move" == "yes" ]; then
+        # Move back to the array. Replace the pool segment with
+        # $target_keephours (typically "user0" which lets Unraid
+        # allocate to any array disk).
+        local rel="${cache_file#/mnt/$pool/}"
+        local array_dir="/mnt/$target_keephours/$(dirname "$rel")"
+        mkdir -p "$array_dir"
+        if [ ${#to_rm[@]} -gt 0 ]; then
+            echo "evict (move back): ${to_rm[*]} -> $array_dir/"
+            $rsync_copy --partial --remove-source-files "${to_rm[@]}" "$array_dir/"
+            if [ "$unraid_note" == "yes" ]; then
+                /usr/local/emhttp/webGui/scripts/notify -e "Cache Mover Info" -s "Evict (moved back)" -d "$array_dir/" -i "normal" &
+            fi
         fi
-    done
+    else
+        local f
+        for f in "${to_rm[@]}"; do
+            echo "evict: $f"
+            rm -f "$f"
+            if [ "$unraid_note" == "yes" ]; then
+                /usr/local/emhttp/webGui/scripts/notify -e "Cache Mover Info" -s "Evict" -d "$f" -i "normal" &
+            fi
+        done
+    fi
     find "$dst_dir" -type d -empty -delete 2>/dev/null
 }
 
@@ -317,7 +343,12 @@ for m in d.get("movies", []):
     fi
     echo "pre-cache movie folder: $rsync_source/ -> $rsync_target/"
     mkdir -p "$rsync_target"
-    $rsync_copy --partial "$rsync_source/" "$rsync_target/"
+    if [ "$precache_move" == "yes" ]; then
+        $rsync_copy --partial --remove-source-files "$rsync_source/" "$rsync_target/"
+        find "$rsync_source" -maxdepth 0 -type d -empty -delete 2>/dev/null
+    else
+        $rsync_copy --partial "$rsync_source/" "$rsync_target/"
+    fi
     if [ "$move_excl" == "yes" ]; then
         echo "$rsync_target" >> "$move_excl_list" 2>/dev/null
         awk -i inplace '!seen[$0]++' "$move_excl_list" 2>/dev/null
