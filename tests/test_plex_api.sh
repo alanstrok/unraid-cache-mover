@@ -14,7 +14,7 @@ SCRIPT="$REPO/src/usr/local/emhttp/plugins/cache-mover/scripts/plex_api.py"
 
 WORK_ACTIVE=$(mktemp -d)
 WORK_PROG="$HERE/fixtures/plex-progression"
-trap 'rm -rf "$WORK_ACTIVE"' EXIT
+trap 'rm -rf "$WORK_ACTIVE" "$WORK_PROG_RECENT" 2>/dev/null' EXIT
 
 # Stage the active-playback fixtures into a tmp dir so we can drop a
 # fresh ondeck.json with current-time-relative timestamps.
@@ -112,31 +112,68 @@ else
 fi
 
 ########################################################################
-echo "=== Run B: progression only (nothing playing, stale on-deck, X=2) ==="
+echo "=== Run B: stale on-deck, nothing playing — should NOT pre-cache ==="
 OUT_B=$(run_targets "$WORK_PROG" --precache-episodes 2)
 
-# Progression: last-watched is S02E04. Walk N+1=3 unwatched starting at i+1.
-# => S02E05, S02E06, S02E07.
-EXPECT_B_EPISODES="/data/TVRIPS/TestShow/Season 02/TestShow - S02E05.mkv
-/data/TVRIPS/TestShow/Season 02/TestShow - S02E06.mkv
-/data/TVRIPS/TestShow/Season 02/TestShow - S02E07.mkv"
+# On-deck entry is from 2020 (way outside 14-day window). Both the
+# on-deck filter AND the progression branch should skip this show.
+EXPECT_B_EPISODES=""
 EXPECT_B_ACTIVE=""
 EXPECT_B_MOVIES=""
 
-check "B.episodes (next-one + 2 more)" "$EXPECT_B_EPISODES" "$(echo "$OUT_B" | extract episodes)"
+check "B.episodes (stale = empty)"     "$EXPECT_B_EPISODES" "$(echo "$OUT_B" | extract episodes)"
 check "B.active   (empty)"             "$EXPECT_B_ACTIVE"   "$(echo "$OUT_B" | extract active)"
 check "B.movies   (empty)"             "$EXPECT_B_MOVIES"   "$(echo "$OUT_B" | extract movies)"
 
 ########################################################################
+echo "=== Run B2: recent on-deck, nothing playing — progression SHOULD work ==="
+# Build a progression fixture with a RECENT on-deck lastViewedAt.
+WORK_PROG_RECENT=$(mktemp -d)
+cp "$HERE/fixtures/plex-progression/sessions.json" "$WORK_PROG_RECENT/sessions.json"
+cp "$HERE/fixtures/plex/allLeaves_1001.json" "$WORK_PROG_RECENT/allLeaves_1001.json"
+RECENT_PROG=$((NOW - 3 * 86400))  # 3 days ago: within 14-day window
+cat > "$WORK_PROG_RECENT/ondeck.json" <<EOF
+{
+  "MediaContainer": {
+    "size": 1,
+    "Metadata": [
+      {
+        "type": "episode",
+        "ratingKey": "5006",
+        "grandparentRatingKey": "1001",
+        "parentIndex": 2,
+        "index": 6,
+        "lastViewedAt": $RECENT_PROG,
+        "Media": [{"Part": [{"file": "/data/TVRIPS/TestShow/Season 02/TestShow - S02E06.mkv"}]}]
+      }
+    ]
+  }
+}
+EOF
+
+OUT_B2=$(run_targets "$WORK_PROG_RECENT" --precache-episodes 2)
+
+# On-deck E06 within 14 days → becomes anchor → E06 + 2 next unwatched
+# (E07, E10). Progression branch skips because allLeaves' most-recently-
+# watched (E04) is from 2023 — older than 14-day window.
+EXPECT_B2_EPISODES="/data/TVRIPS/TestShow/Season 02/TestShow - S02E06.mkv
+/data/TVRIPS/TestShow/Season 02/TestShow - S02E07.mkv
+/data/TVRIPS/TestShow/Season 02/TestShow - S02E10.mkv"
+
+check "B2.episodes (recent progression)" "$EXPECT_B2_EPISODES" "$(echo "$OUT_B2" | extract episodes)"
+check "B2.active   (empty)"              ""                     "$(echo "$OUT_B2" | extract active)"
+
+rm -rf "$WORK_PROG_RECENT"
+
+########################################################################
 echo "=== Run C: X=0 edge cases ==="
 OUT_C_ACTIVE=$(run_targets "$WORK_ACTIVE" --precache-episodes 0)
-OUT_C_PROG=$(run_targets "$WORK_PROG" --precache-episodes 0)
 
 EXPECT_C_ACTIVE="/data/TVRIPS/TestShow/Season 02/TestShow - S02E05.mkv"
-EXPECT_C_PROG="/data/TVRIPS/TestShow/Season 02/TestShow - S02E05.mkv"
 
 check "C.active   (anchor only)"        "$EXPECT_C_ACTIVE" "$(echo "$OUT_C_ACTIVE" | extract episodes)"
-check "C.prog     (next-one only)"      "$EXPECT_C_PROG"   "$(echo "$OUT_C_PROG"   | extract episodes)"
+# Stale progression fixture: X=0 doesn't matter, show is too old → empty.
+check "C.prog     (stale = empty)"      ""                  "$(run_targets "$WORK_PROG" --precache-episodes 0 | extract episodes)"
 
 ########################################################################
 echo "=== Run D: TV/movie subfolder scoping (TV regex empty -> block TV) ==="

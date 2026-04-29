@@ -250,14 +250,16 @@ def compute_targets(client, cfg) -> Dict[str, List[Dict[str, Any]]]:
                 continue
             movies.append({"plex_path": d["file"]})
 
-    # Walk each unique show's allLeaves once. Collect rating keys from the
-    # raw on-deck list too (not just post-filter) so shows with stale
-    # on-deck items still get their progression walk below.
+    # Walk each unique show's allLeaves once. Include on-deck show
+    # rating keys only if the on-deck entry is within the TV age window
+    # — stale on-deck items should NOT trigger pre-caching.
     show_keys = sorted(
         {a["grandparent_rating_key"] for a in episode_anchors
          if a.get("grandparent_rating_key")}
         | {d["grandparent_rating_key"] for d in ondeck
-           if d["type"] == "episode" and d.get("grandparent_rating_key")}
+           if d["type"] == "episode" and d.get("grandparent_rating_key")
+           and (not d.get("last_viewed_at")
+                or (now - d["last_viewed_at"]) <= tv_max_age_sec)}
     )
     leaves_by_show: Dict[str, List[Dict[str, Any]]] = {}
     for k in show_keys:
@@ -329,7 +331,8 @@ def compute_targets(client, cfg) -> Dict[str, List[Dict[str, Any]]]:
 
     # Progression anchor: most-recently-watched episode per show even if
     # nothing is currently playing. Cache "next one + X" = 1 + N total,
-    # matching the active/on-deck branch.
+    # matching the active/on-deck branch. Skip shows whose most-recently-
+    # watched episode is older than the TV on-deck age window.
     for show_key, leaves in leaves_by_show.items():
         watched = [ep for ep in leaves if ep["view_count"] >= 1
                    and ep["last_viewed_at"] > 0]
@@ -337,6 +340,8 @@ def compute_targets(client, cfg) -> Dict[str, List[Dict[str, Any]]]:
             continue
         watched.sort(key=lambda e: e["last_viewed_at"])
         last = watched[-1]
+        if (now - last["last_viewed_at"]) > tv_max_age_sec:
+            continue
         for i, ep in enumerate(leaves):
             if ep["file"] == last["file"]:
                 _walk_next(leaves, i + 1, int(cfg.precache_episodes) + 1)
