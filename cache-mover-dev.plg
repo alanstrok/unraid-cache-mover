@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "cache-mover">
 <!ENTITY author    "alanstrok">
-<!ENTITY version   "2026.04.29">
+<!ENTITY version   "2026.04.29a">
 <!ENTITY launch    "Settings/cache-mover">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/alanstrok/unraid-cache-mover/claude/tv-show-episode-moving-G9EMM">
 <!ENTITY pluginURL "&gitURL;/cache-mover-dev.plg">
@@ -20,6 +20,10 @@
         support="https://github.com/alanstrok/unraid-cache-mover">
 
 <CHANGES>
+ ###2026.04.29a (plex-dev branch)
+  - sync mover ignore list with cached list: move_tune_list is now an exact copy of move_excl_list
+  - stale entries no longer accumulate in the Mover Tuning Excluded list
+
  ###2026.04.29 (plex-dev branch)
   - fix upstream bug: cache_mover3 cleaner never cleaned anything when subfolder_keep_sub was empty
   - empty subfolder_keep_sub regex matched every path, then empty time_keephours_sub broke the comparison
@@ -83,7 +87,7 @@
 
 <FILE Name="&plgPATH;/&plgNAME;.txz" Run="upgradepkg --install-new">
 <URL>&gitURL;/packages/&name;.txz</URL>
-<MD5>140935c2c7ec294954682bb1f42df647</MD5>
+<MD5>82fdf7bda46cd9477181d930d543a0c1</MD5>
 </FILE>
 
 <FILE Name="&plgPATH;/fdclose.txz" Run="upgradepkg --install-new" Min="6.12.13">
