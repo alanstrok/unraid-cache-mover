@@ -136,7 +136,18 @@ disk_to_pool() {
     echo "${dp/$dn/$pool}"
 }
 
-### helper: copy (or move) episode file plus matching sidecars
+### helper: check if a file has hardlinks (link count > 1).
+### Returns 0 (true) if hardlinked, 1 (false) if not.
+has_hardlinks() {
+    local f="$1"
+    local links
+    links=$(stat -c %h "$f" 2>/dev/null)
+    [ -n "$links" ] && [ "$links" -gt 1 ]
+}
+
+### helper: copy (or move) episode file plus matching sidecars.
+### In move mode, falls back to copy if the video file has hardlinks
+### (likely a torrent seed — moving would break the link).
 copy_with_sidecars() {
     local diskpath="$1"
     local poolpath="$2"
@@ -153,11 +164,13 @@ copy_with_sidecars() {
     fi
     shopt -u nullglob
     if [ ${#matches[@]} -gt 0 ]; then
-        if [ "$precache_move" == "yes" ]; then
+        if [ "$precache_move" == "yes" ] && ! has_hardlinks "$diskpath"; then
             $rsync_copy --partial --remove-source-files "${matches[@]}" "$dst_dir/"
-            # Clean up empty source dirs left after the move.
             find "$src_dir" -maxdepth 0 -type d -empty -delete 2>/dev/null
         else
+            if [ "$precache_move" == "yes" ]; then
+                echo "hardlinks detected, copying instead of moving: $diskpath"
+            fi
             $rsync_copy --partial "${matches[@]}" "$dst_dir/"
         fi
     fi
@@ -343,10 +356,18 @@ for m in d.get("movies", []):
     fi
     echo "pre-cache movie folder: $rsync_source/ -> $rsync_target/"
     mkdir -p "$rsync_target"
-    if [ "$precache_move" == "yes" ]; then
+    # Check if any file in the movie folder has hardlinks (torrent seed).
+    movie_has_hardlinks=""
+    while IFS= read -r -d '' mf; do
+        if has_hardlinks "$mf"; then movie_has_hardlinks="yes"; break; fi
+    done < <(find "$rsync_source" -type f -print0)
+    if [ "$precache_move" == "yes" ] && [ -z "$movie_has_hardlinks" ]; then
         $rsync_copy --partial --remove-source-files "$rsync_source/" "$rsync_target/"
         find "$rsync_source" -maxdepth 0 -type d -empty -delete 2>/dev/null
     else
+        if [ "$precache_move" == "yes" ] && [ -n "$movie_has_hardlinks" ]; then
+            echo "hardlinks detected in movie folder, copying instead of moving: $rsync_source"
+        fi
         $rsync_copy --partial "$rsync_source/" "$rsync_target/"
     fi
     if [ "$move_excl" == "yes" ]; then
