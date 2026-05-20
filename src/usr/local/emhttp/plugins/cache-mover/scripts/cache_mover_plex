@@ -146,11 +146,15 @@ has_hardlinks() {
 }
 
 ### helper: copy (or move) episode file plus matching sidecars.
-### In move mode, falls back to copy if the video file has hardlinks
-### (likely a torrent seed — moving would break the link).
+### In move mode, skips files with hardlinks entirely (likely a torrent
+### seed — will be picked up on a future run when the seed is done).
 copy_with_sidecars() {
     local diskpath="$1"
     local poolpath="$2"
+    if [ "$precache_move" == "yes" ] && has_hardlinks "$diskpath"; then
+        echo "skipping (hardlinked, likely seeding): $diskpath"
+        return
+    fi
     local src_dir dst_dir stem_file stem
     src_dir=$(dirname "$diskpath")
     dst_dir=$(dirname "$poolpath")
@@ -164,13 +168,10 @@ copy_with_sidecars() {
     fi
     shopt -u nullglob
     if [ ${#matches[@]} -gt 0 ]; then
-        if [ "$precache_move" == "yes" ] && ! has_hardlinks "$diskpath"; then
+        if [ "$precache_move" == "yes" ]; then
             $rsync_copy --partial --remove-source-files "${matches[@]}" "$dst_dir/"
             find "$src_dir" -maxdepth 0 -type d -empty -delete 2>/dev/null
         else
-            if [ "$precache_move" == "yes" ]; then
-                echo "hardlinks detected, copying instead of moving: $diskpath"
-            fi
             $rsync_copy --partial "${matches[@]}" "$dst_dir/"
         fi
     fi
@@ -354,20 +355,23 @@ for m in d.get("movies", []):
         echo "too fresh ($((now - mt))s), skipping: $diskpath"
         continue
     fi
+    # Skip entire movie folder if any file has hardlinks (torrent seed).
+    if [ "$precache_move" == "yes" ]; then
+        movie_has_hardlinks=""
+        while IFS= read -r -d '' mf; do
+            if has_hardlinks "$mf"; then movie_has_hardlinks="yes"; break; fi
+        done < <(find "$rsync_source" -type f -print0)
+        if [ -n "$movie_has_hardlinks" ]; then
+            echo "skipping movie folder (hardlinked, likely seeding): $rsync_source"
+            continue
+        fi
+    fi
     echo "pre-cache movie folder: $rsync_source/ -> $rsync_target/"
     mkdir -p "$rsync_target"
-    # Check if any file in the movie folder has hardlinks (torrent seed).
-    movie_has_hardlinks=""
-    while IFS= read -r -d '' mf; do
-        if has_hardlinks "$mf"; then movie_has_hardlinks="yes"; break; fi
-    done < <(find "$rsync_source" -type f -print0)
-    if [ "$precache_move" == "yes" ] && [ -z "$movie_has_hardlinks" ]; then
+    if [ "$precache_move" == "yes" ]; then
         $rsync_copy --partial --remove-source-files "$rsync_source/" "$rsync_target/"
         find "$rsync_source" -maxdepth 0 -type d -empty -delete 2>/dev/null
     else
-        if [ "$precache_move" == "yes" ] && [ -n "$movie_has_hardlinks" ]; then
-            echo "hardlinks detected in movie folder, copying instead of moving: $rsync_source"
-        fi
         $rsync_copy --partial "$rsync_source/" "$rsync_target/"
     fi
     if [ "$move_excl" == "yes" ]; then
