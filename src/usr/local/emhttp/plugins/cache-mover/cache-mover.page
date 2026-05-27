@@ -54,6 +54,7 @@ $cachemoversettings_precache_specials       = isset($cachemoversettings['precach
 $cachemoversettings_precache_include_movies = isset($cachemoversettings['precache_include_movies']) ? $cachemoversettings['precache_include_movies'] : "yes";
 $cachemoversettings_sidecar_dash            = isset($cachemoversettings['sidecar_dash']) ? $cachemoversettings['sidecar_dash'] : "yes";
 $cachemoversettings_precache_move           = isset($cachemoversettings['precache_move']) ? $cachemoversettings['precache_move'] : "no";
+$cachemoversettings_min_free_space_gb      = isset($cachemoversettings['min_free_space_gb']) ? $cachemoversettings['min_free_space_gb'] : "10";
 $cachemoversettings_tv_subfolders             = isset($cachemoversettings['tv_subfolders']) ? $cachemoversettings['tv_subfolders'] : "";
 $cachemoversettings_movie_subfolders          = isset($cachemoversettings['movie_subfolders']) ? $cachemoversettings['movie_subfolders'] : "";
 $cachemoversettings_tv_ondeck_max_age_days    = isset($cachemoversettings['tv_ondeck_max_age_days']) ? $cachemoversettings['tv_ondeck_max_age_days'] : "14";
@@ -261,6 +262,14 @@ Copy Subtitles and Extras:
   </select>
     <blockquote class='inline_help'>
         <p>When enabled, subtitle files (.srt, .sub), metadata (.nfo), and thumbnail images are moved alongside the video file</p>
+    </blockquote>
+
+Minimum Free Space (GB):
+: <input type="text" name="min_free_space_gb" class="narrow" maxlength="4" value="<?=$cachemoversettings_min_free_space_gb;?>" placeholder="10" >
+    <blockquote class='inline_help'>
+        <p>Stop pre-caching when the fast pool drops below this many GB of free space</p>
+        <p>Prevents the pool from filling up completely, leaving room for torrents and other activity</p>
+        <p>Eviction (cleaning up watched content) always runs regardless of free space</p>
     </blockquote>
 
 <div class="title"><span class="left"><i class="fa fa-hand-peace-o title"></i>Plex Smart Pre-Cache - TV Shows</span></div>

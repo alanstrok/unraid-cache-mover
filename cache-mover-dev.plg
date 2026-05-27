@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "cache-mover">
 <!ENTITY author    "alanstrok">
-<!ENTITY version   "2026.04.29c">
+<!ENTITY version   "2026.04.29d">
 <!ENTITY launch    "Settings/cache-mover">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/alanstrok/unraid-cache-mover/claude/tv-show-episode-moving-G9EMM">
 <!ENTITY pluginURL "&gitURL;/cache-mover-dev.plg">
@@ -20,10 +20,11 @@
         support="https://github.com/alanstrok/unraid-cache-mover">
 
 <CHANGES>
- ###2026.04.29c (plex-dev branch)
-  - hardlink protection: skip files with hardlinks entirely (torrent seeds), will be picked up when seed is done
+ ###2026.04.29d (plex-dev branch)
+  - minimum free space guard: stop pre-caching when pool drops below X GB (default 10)
+  - eviction always runs regardless of free space
+  - hardlink protection: skip files with hardlinks entirely (torrent seeds)
   - UI overhaul: dropdowns for yes/no, simpler labels, plain-language help text
-  - renamed section to "Plex Smart Pre-Cache" with clearer field names
 
  ###2026.04.29a (plex-dev branch)
   - sync mover ignore list with cached list: move_tune_list is now an exact copy of move_excl_list
@@ -92,7 +93,7 @@
 
 <FILE Name="&plgPATH;/&plgNAME;.txz" Run="upgradepkg --install-new">
 <URL>&gitURL;/packages/&name;.txz</URL>
-<MD5>4bb447e9812de00f0681218750417337</MD5>
+<MD5>cb3f05ca958381e12b3116b3565ce71b</MD5>
 </FILE>
 
 <FILE Name="&plgPATH;/fdclose.txz" Run="upgradepkg --install-new" Min="6.12.13">
@@ -207,7 +208,7 @@
   if test -f "$settingsfile"; then
     echo "| $settingsfile already there, merging any missing new keys"
     # Add any new keys from default that aren't already in the user's file.
-    for key in precache_enabled precache_episodes ondeck_max_age_days precache_specials precache_include_movies sidecar_dash precache_move tv_subfolders movie_subfolders tv_ondeck_max_age_days movie_ondeck_max_age_days; do
+    for key in precache_enabled precache_episodes ondeck_max_age_days precache_specials precache_include_movies sidecar_dash precache_move min_free_space_gb tv_subfolders movie_subfolders tv_ondeck_max_age_days movie_ondeck_max_age_days; do
       if ! grep -q "^${key}=" "$settingsfile"; then
         line=$(grep "^${key}=" "$def_settingsfile")
         if [ -n "$line" ]; then

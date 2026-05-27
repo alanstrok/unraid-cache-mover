@@ -70,6 +70,7 @@ movie_subfolders="${movie_subfolders:-}"
 precache_include_movies="${precache_include_movies:-yes}"
 precache_specials="${precache_specials:-no}"
 precache_move="${precache_move:-no}"
+min_free_space_gb="${min_free_space_gb:-10}"
 sidecar_dash="${sidecar_dash:-yes}"
 wait_todo="${wait_todo:-120}"
 target_keephours="${target_keephours:-user0}"
@@ -143,6 +144,14 @@ has_hardlinks() {
     local links
     links=$(stat -c %h "$f" 2>/dev/null)
     [ -n "$links" ] && [ "$links" -gt 1 ]
+}
+
+### helper: check if the pool has enough free space.
+### Returns 0 (true) if free space >= min_free_space_gb, 1 (false) if not.
+pool_has_space() {
+    local avail_gb
+    avail_gb=$(df -BG "/mnt/$pool" 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G')
+    [ -n "$avail_gb" ] && [ "$avail_gb" -ge "$min_free_space_gb" ]
 }
 
 ### helper: copy (or move) episode file plus matching sidecars.
@@ -318,6 +327,10 @@ for e in d.get("episodes", []):
         echo "too fresh ($((now - mt))s), skipping: $diskpath"
         continue
     fi
+    if ! pool_has_space; then
+        echo "pool /mnt/$pool below ${min_free_space_gb}GB free, stopping episode pre-cache"
+        break
+    fi
     echo "pre-cache episode: $diskpath -> $poolpath"
     copy_with_sidecars "$diskpath" "$poolpath"
     if [ "$unraid_note" == "yes" ]; then
@@ -354,6 +367,10 @@ for m in d.get("movies", []):
     if [ -n "$mt" ] && [ $((now - mt)) -lt $wait_todo ]; then
         echo "too fresh ($((now - mt))s), skipping: $diskpath"
         continue
+    fi
+    if ! pool_has_space; then
+        echo "pool /mnt/$pool below ${min_free_space_gb}GB free, stopping movie pre-cache"
+        break
     fi
     # Skip entire movie folder if any file has hardlinks (torrent seed).
     if [ "$precache_move" == "yes" ]; then
