@@ -59,6 +59,13 @@ $cachemoversettings_tv_subfolders             = isset($cachemoversettings['tv_su
 $cachemoversettings_movie_subfolders          = isset($cachemoversettings['movie_subfolders']) ? $cachemoversettings['movie_subfolders'] : "";
 $cachemoversettings_tv_ondeck_max_age_days    = isset($cachemoversettings['tv_ondeck_max_age_days']) ? $cachemoversettings['tv_ondeck_max_age_days'] : "14";
 $cachemoversettings_movie_ondeck_max_age_days = isset($cachemoversettings['movie_ondeck_max_age_days']) ? $cachemoversettings['movie_ondeck_max_age_days'] : "7";
+// Head Start (instant starts)
+$cachemoversettings_headstart_enabled       = isset($cachemoversettings['headstart_enabled']) ? $cachemoversettings['headstart_enabled'] : "";
+$cachemoversettings_headstart_mb            = isset($cachemoversettings['headstart_mb']) ? $cachemoversettings['headstart_mb'] : "64";
+$cachemoversettings_headstart_min_mb        = isset($cachemoversettings['headstart_min_mb']) ? $cachemoversettings['headstart_min_mb'] : "256";
+$cachemoversettings_headstart_keephours     = isset($cachemoversettings['headstart_keephours']) ? $cachemoversettings['headstart_keephours'] : "336";
+$cachemoversettings_headstart_max_new       = isset($cachemoversettings['headstart_max_new']) ? $cachemoversettings['headstart_max_new'] : "200";
+$cachemoversettings_head_cron               = isset($cachemoversettings['head_cron']) ? $cachemoversettings['head_cron'] : "";
 ?>
 
 <script>
@@ -67,6 +74,8 @@ $cachemoversettings_movie_ondeck_max_age_days = isset($cachemoversettings['movie
             document.getElementById("command").value = "/usr/local/emhttp/plugins/cache-mover/scripts/cache_cleaner_cron.sh";
         } else if( command == "mover_start" ){
             document.getElementById("command").value = "/usr/local/emhttp/plugins/cache-mover/scripts/cache_mover_cron.sh";
+        } else if( command == "head_start" ){
+            document.getElementById("command").value = "/usr/local/emhttp/plugins/cache-mover/scripts/cache_head_cron.sh";
         }
         document.getElementById("form").submit();
     }
@@ -331,6 +340,54 @@ Only Pre-Cache Recently Watched (days):
     <blockquote class='inline_help'>
         <p>Only pre-cache movies you've watched within the last X days</p>
         <p>Shorter than TV shows because movies are larger and you typically don't rewatch them right away</p>
+    </blockquote>
+
+<div class="title"><span class="left"><i class="fa fa-hand-peace-o title"></i>Head Start - Instant Starts</span></div>
+
+Enable Head Start:
+: <select name="headstart_enabled" class="narrow">
+    <option value="yes" <?=($cachemoversettings_headstart_enabled == 'yes') ? 'selected' : '';?>>Yes</option>
+    <option value="no" <?=($cachemoversettings_headstart_enabled != 'yes') ? 'selected' : '';?>>No</option>
+  </select>
+    <blockquote class='inline_help'>
+        <p>Keep just the FIRST few seconds of (most) media on the fast pool as a small sparse stub, so playback starts instantly while the array disk spins up</p>
+        <p>When you actually start watching, Smart Pre-Cache fills the rest of that file in place and playback continues from the pool</p>
+        <p>Uses the general "Media subfolders" / "Media filetypes" / "Exclusions" at the top of this page to pick candidate files</p>
+        <p><b>Best for direct-play containers like .mkv.</b> Some clients probe the END of a file on open (e.g. the MP4 moov atom) which lands in the not-yet-filled region - restrict filetypes if you hit issues</p>
+    </blockquote>
+
+Head Size (MB):
+: <input type="text" name="headstart_mb" class="narrow" maxlength="5" value="<?=$cachemoversettings_headstart_mb;?>" placeholder="64" >
+    <blockquote class='inline_help'>
+        <p>How many MB from the start of each file to keep on the pool. Needs to cover the time the array disk takes to spin up at your playback bitrate</p>
+        <p>64 MB is a sane default for most direct-play content</p>
+    </blockquote>
+
+Minimum File Size (MB):
+: <input type="text" name="headstart_min_mb" class="narrow" maxlength="6" value="<?=$cachemoversettings_headstart_min_mb;?>" placeholder="256" >
+    <blockquote class='inline_help'>
+        <p>Only create heads for files larger than this. Small files start fast anyway and aren't worth a stub</p>
+    </blockquote>
+
+Keep Unused Heads (hours):
+: <input type="text" name="headstart_keephours" class="narrow" maxlength="5" value="<?=$cachemoversettings_headstart_keephours;?>" placeholder="336" >
+    <blockquote class='inline_help'>
+        <p>Evict a head from the pool if it hasn't been touched/played within this many hours (default 336 = 14 days)</p>
+    </blockquote>
+
+Max New Heads Per Run:
+: <input type="text" name="headstart_max_new" class="narrow" maxlength="6" value="<?=$cachemoversettings_headstart_max_new;?>" placeholder="200" >
+    <blockquote class='inline_help'>
+        <p>Throttle: stop after creating this many new heads in a single seed run. Limits how many array disks spin up at once. 0 = unlimited</p>
+    </blockquote>
+
+Head Start Seeder Cron:
+: <input type="text" name="head_cron" class="narrow" maxlength="31" value="<?=$cachemoversettings_head_cron;?>" placeholder="30 5 * * *" >
+<input type="button" value="Set Cron" onClick="send('head_start')">
+<input type="button" value="<?php echo isset($cachemoversettings['head_cron_state']) ? $cachemoversettings['head_cron_state'] : 'stopped'; ?>"/>
+    <blockquote class='inline_help'>
+        <p>When to (re)seed heads for newly added media. Walks the array, so once a day (off-peak) is recommended</p>
+        <p>Leave empty and press Set Cron to remove the schedule</p>
     </blockquote>
 
 <div class="title"><span class="left"><i class="fa fa-hand-peace-o title"></i>Cache Mover Setup - Recycle Setup</span></div>

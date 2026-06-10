@@ -53,6 +53,19 @@ if [ "$move_excl" = "yes" ]; then
 	sort -u "$move_excl_list" > "$move_tune_list"
 fi
 
+### head-start: keep sparse heads pinned on the pool by adding their
+### parent dirs to the mover ignore list. Heads are tracked separately
+### (NOT in move_excl_list) so cache_mover3 never treats a sparse head
+### as a finished copy.
+headstart_list="${headstart_list:-/mnt/user/system/mover/mover_heads.txt}"
+if [ "$headstart_enabled" = "yes" ] && [ -s "$headstart_list" ] && [ -n "$move_tune_list" ]; then
+	while IFS= read -r headfile; do
+		[ -z "$headfile" ] && continue
+		dirname "$headfile"
+	done < "$headstart_list" >> "$move_tune_list"
+	sort -u "$move_tune_list" -o "$move_tune_list"
+fi
+
 sed -i '/^$/d' $move_tune_list
 sed -i '/^$/d' $move_excl_list
 

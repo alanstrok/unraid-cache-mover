@@ -229,13 +229,16 @@
   touch /boot/config/plugins/cache-mover/cachemoversettings
   sed -i 's/^script_cron_state=.*//' /boot/config/plugins/cache-mover/cachemoversettings
   sed -i 's/^clean_cron_state=.*//' /boot/config/plugins/cache-mover/cachemoversettings
+  sed -i 's/^head_cron_state=.*//' /boot/config/plugins/cache-mover/cachemoversettings
   sed -i '/^$/d' /boot/config/plugins/cache-mover/cachemoversettings
 
   echo 'script_cron_state=""' >> /boot/config/plugins/cache-mover/cachemoversettings
   echo 'clean_cron_state=""' >> /boot/config/plugins/cache-mover/cachemoversettings
+  echo 'head_cron_state=""' >> /boot/config/plugins/cache-mover/cachemoversettings
 
   /usr/local/emhttp/plugins/cache-mover/scripts/cache_mover_cron.sh
   /usr/local/emhttp/plugins/cache-mover/scripts/cache_cleaner_cron.sh
+  /usr/local/emhttp/plugins/cache-mover/scripts/cache_head_cron.sh
 
   if [ ! -z "$(crontab -l | grep -i Cache_Mover)" ]; then
     echo "| cronjob for Cache Mover started"
@@ -251,6 +254,14 @@
   else
     echo "| cron for Cache Cleaner not started"
     sed -i 's/^clean_cron_state=.*/clean_cron_state="stopped"/' /boot/config/plugins/cache-mover/cachemoversettings
+  fi
+
+  if [ ! -z "$(crontab -l | grep -i Cache_Head)" ]; then
+    echo "| cronjob for Cache Head Start started"
+    sed -i 's/^head_cron_state=.*/head_cron_state="started"/' /boot/config/plugins/cache-mover/cachemoversettings
+  else
+    echo "| cron for Cache Head Start not started"
+    sed -i 's/^head_cron_state=.*/head_cron_state="stopped"/' /boot/config/plugins/cache-mover/cachemoversettings
   fi
   echo "+=============================================================================="
  </INLINE>

@@ -1,0 +1,219 @@
+#!/bin/bash
+#
+# cache_mover_head - "head start" seeder.
+#
+# Goal: instant playback starts on (most) media that lives on spun-down
+# array disks. For each candidate media file we keep only the FIRST
+# headstart_mb megabytes on the fast pool as a *sparse* file that is
+# truncated to the full size of the original. Because Unraid's shfs
+# serves the pool copy in preference to the array copy, a player opens
+# the pool head and starts reading immediately - no array spin-up wait.
+#
+# Once the file is actually being watched, cache_mover_plex fills the
+# remaining (sparse) part in place (rsync --inplace, same inode) so
+# playback continues seamlessly from the pool, and the file is handed
+# off to the normal cache lifecycle (move_excl_list / cache_mover3).
+#
+# Heads are tracked in $headstart_list. They are deliberately kept OUT
+# of move_excl_list so cache_mover3 never mistakes a sparse head for a
+# complete copy. cache_mover4 folds the head directories into the mover
+# ignore list so Unraid's mover won't move a head off the pool.
+#
+# NOTE: this is best suited to direct-play containers (e.g. .mkv). Some
+# clients/containers probe the END of a file on open (e.g. the MP4 moov
+# atom) which would land in an unfilled sparse region. Restrict the
+# media filetypes accordingly if you hit playback issues.
+#
+
+################################
+source /boot/config/plugins/cache-mover/cachemoversettings
+################################
+listupdater="/usr/local/emhttp/plugins/cache-mover/scripts/cache_mover4"
+
+### Check if another instance of this Program is running
+pidof -o %PPID -x $0 >/dev/null && echo "ERROR: Program $0 already running" && exit 1
+
+### Log any unexpected signal.
+trap 'echo "cache_mover_head received signal at $(date \"+%H:%M:%S\")"; exit 143' INT TERM HUP
+
+################################
+if [ "$unraid_syslog" == "yes" ]; then
+log_message() {
+  while IFS= read -r line; do
+    logger "cache-mover: head: ${line}"
+  done
+}
+exec > >(log_message) 2>&1
+fi
+
+################################
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
+### remove leading/trailing slashes on pool
+pool="${pool#/}"
+pool="${pool%/}"
+
+### defaults
+headstart_mb="${headstart_mb:-64}"
+headstart_min_mb="${headstart_min_mb:-256}"
+headstart_keephours="${headstart_keephours:-336}"
+headstart_max_new="${headstart_max_new:-200}"
+headstart_list="${headstart_list:-/mnt/user/system/mover/mover_heads.txt}"
+min_free_space_gb="${min_free_space_gb:-10}"
+
+### sanity
+if [ "$headstart_enabled" != "yes" ]; then
+    echo "head start disabled, nothing to do"
+    exit 0
+fi
+if [ -z "$pool" ]; then
+    echo "pool not set, aborting"
+    exit 0
+fi
+
+mkdir -p "$(dirname "$headstart_list")" 2>/dev/null
+touch "$headstart_list" 2>/dev/null
+
+head_bytes=$((headstart_mb * 1024 * 1024))
+min_bytes=$((headstart_min_mb * 1024 * 1024))
+
+### regex filters (space separated -> alternation)
+subf=$(echo "$subfolders" | sed 's/ /|/g')
+ftypes=$(echo "$filetypes" | sed 's/ /|/g')
+excl=$(echo "$exclusions" | sed 's/ /|/g')
+
+### helper: disk path -> pool path (preserves fuse layout)
+disk_to_pool() {
+    local dp="$1" dn
+    dn=$(echo "$dp" | cut -f 3 -d "/")
+    if [ "$dn" == "disks" ]; then
+        local subdisk
+        subdisk=$(echo "$dp" | cut -f 4 -d "/")
+        dn="disks/$subdisk"
+    fi
+    echo "${dp/$dn/$pool}"
+}
+
+### helper: pool free space guard
+pool_has_space() {
+    local avail_gb
+    avail_gb=$(df -BG "/mnt/$pool" 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G')
+    [ -n "$avail_gb" ] && [ "$avail_gb" -ge "$min_free_space_gb" ]
+}
+
+### helper: has the head been filled to a (near) complete copy?
+### Compares allocated blocks against the apparent size.
+is_filled() {
+    local f="$1" apparent allocated
+    apparent=$(stat -c %s "$f" 2>/dev/null) || return 1
+    allocated=$(( $(stat -c %b "$f" 2>/dev/null) * 512 ))
+    [ "$apparent" -gt 0 ] && [ "$allocated" -ge $((apparent * 95 / 100)) ]
+}
+
+### helper: drop a path from the head list
+drop_head() {
+    local hp="$1"
+    grep -Fxv "$hp" "$headstart_list" > "${headstart_list}.tmp" 2>/dev/null
+    mv "${headstart_list}.tmp" "$headstart_list" 2>/dev/null
+}
+
+################################
+### 1. Maintenance pass over existing heads:
+###    - drop vanished heads
+###    - promote filled heads into the normal cache lifecycle
+###    - evict stale, unused heads
+################################
+now=$(date +%s)
+while IFS= read -r hp; do
+    [ -z "$hp" ] && continue
+    if [ ! -f "$hp" ]; then
+        echo "head gone, untracking: $hp"
+        drop_head "$hp"
+        continue
+    fi
+    if is_filled "$hp"; then
+        # cache_mover_plex normally promotes on fill, but catch any that
+        # slipped through: hand the directory to the normal lifecycle.
+        echo "head filled, promoting to cache lifecycle: $hp"
+        if [ "$move_excl" == "yes" ]; then
+            dirname "$hp" >> "$move_excl_list" 2>/dev/null
+            awk -i inplace '!seen[$0]++' "$move_excl_list" 2>/dev/null
+        fi
+        drop_head "$hp"
+        continue
+    fi
+    # stale eviction by access time
+    la=$(( (now - $(stat -c %X "$hp" 2>/dev/null)) / 3600 ))
+    if [ "$la" -gt "$headstart_keephours" ]; then
+        if fuser "$hp" >/dev/null 2>&1; then
+            echo "head stale but in use, keeping: $hp"
+            continue
+        fi
+        echo "evict stale head (${la}h): $hp"
+        rm -f "$hp"
+        find "$(dirname "$hp")" -type d -empty -delete 2>/dev/null
+        drop_head "$hp"
+    fi
+done < "$headstart_list"
+
+################################
+### 2. Seed new heads across the array
+################################
+if [ -z "$subf" ] || [ -z "$ftypes" ]; then
+    echo "subfolders/filetypes not set, skipping seed pass"
+    $listupdater
+    exit 0
+fi
+
+created=0
+while IFS= read -r diskpath; do
+    [ -z "$diskpath" ] && continue
+    if [ "$headstart_max_new" -gt 0 ] && [ "$created" -ge "$headstart_max_new" ]; then
+        echo "reached headstart_max_new=$headstart_max_new, stopping seed pass"
+        break
+    fi
+    poolpath=$(disk_to_pool "$diskpath")
+    # already present on the pool (full copy or existing head) -> skip
+    [ -e "$poolpath" ] && continue
+    fsize=$(stat -c %s "$diskpath" 2>/dev/null)
+    [ -z "$fsize" ] && continue
+    # only bother for files large enough to actually cause a spin-up wait,
+    # and where a head is meaningfully smaller than the whole file
+    [ "$fsize" -lt "$min_bytes" ] && continue
+    [ "$fsize" -le "$head_bytes" ] && continue
+    if ! pool_has_space; then
+        echo "pool /mnt/$pool below ${min_free_space_gb}GB free, stopping seed pass"
+        break
+    fi
+    mkdir -p "$(dirname "$poolpath")"
+    # write the head, then extend sparsely to the full original size
+    if ! head -c "$head_bytes" "$diskpath" > "$poolpath" 2>/dev/null; then
+        echo "failed to read head, skipping: $diskpath"
+        rm -f "$poolpath" 2>/dev/null
+        continue
+    fi
+    truncate -s "$fsize" "$poolpath"
+    # match ownership/perms; keep the original mtime but leave atime fresh
+    chown --reference="$diskpath" "$poolpath" 2>/dev/null
+    chmod --reference="$diskpath" "$poolpath" 2>/dev/null
+    mt=$(stat -c %Y "$diskpath" 2>/dev/null)
+    [ -n "$mt" ] && touch -m -d "@$mt" "$poolpath" 2>/dev/null
+    echo "head: ${headstart_mb}MB of $diskpath -> $poolpath"
+    echo "$poolpath" >> "$headstart_list"
+    created=$((created + 1))
+done < <(find /mnt/disk[0-9]* /mnt/disks/* -type f 2>/dev/null \
+            | grep -E "$subf" \
+            | grep -E "$ftypes" \
+            | { [ -n "$excl" ] && grep -vE "$excl" || cat; })
+
+### dedupe the head list
+awk -i inplace '!seen[$0]++' "$headstart_list" 2>/dev/null
+sed -i '/^$/d' "$headstart_list" 2>/dev/null
+
+echo "head start seed pass done, created $created new head(s)"
+
+### update mover ignore list (folds head dirs in via cache_mover4)
+$listupdater
+
+exit 0

@@ -74,6 +74,7 @@ min_free_space_gb="${min_free_space_gb:-10}"
 sidecar_dash="${sidecar_dash:-yes}"
 wait_todo="${wait_todo:-120}"
 target_keephours="${target_keephours:-user0}"
+headstart_list="${headstart_list:-/mnt/user/system/mover/mover_heads.txt}"
 
 ### 1. fetch targets from Plex
 targets=$(python3 "$plex_api" targets \
@@ -152,6 +153,38 @@ pool_has_space() {
     local avail_gb
     avail_gb=$(df -BG "/mnt/$pool" 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G')
     [ -n "$avail_gb" ] && [ "$avail_gb" -ge "$min_free_space_gb" ]
+}
+
+### helper: is this pool path a tracked "head start" stub?
+is_head() {
+    [ "$headstart_enabled" == "yes" ] || return 1
+    [ -f "$headstart_list" ] || return 1
+    grep -Fxq "$1" "$headstart_list"
+}
+
+### helper: fill a sparse head into a full copy IN PLACE.
+### --inplace keeps the same inode, so a player that already opened the
+### head keeps reading the very same file as the tail fills in behind the
+### playhead. The file is then handed to the normal cache lifecycle
+### (move_excl_list / cache_mover3) and untracked as a head.
+fill_head() {
+    local diskpath="$1" poolpath="$2" dst_dir
+    echo "fill head -> full (in place): $diskpath -> $poolpath"
+    # --ignore-times is REQUIRED: the head has the source's mtime and the
+    # same apparent size (truncated), so rsync's size+mtime quick check
+    # would otherwise skip it and the stub would never fill. --inplace
+    # keeps the inode the player already holds open.
+    rsync -a --inplace --ignore-times "$diskpath" "$poolpath"
+    dst_dir=$(dirname "$poolpath")
+    if [ "$move_excl" == "yes" ]; then
+        echo "$dst_dir" >> "$move_excl_list" 2>/dev/null
+        awk -i inplace '!seen[$0]++' "$move_excl_list" 2>/dev/null
+    fi
+    grep -Fxv "$poolpath" "$headstart_list" > "${headstart_list}.tmp" 2>/dev/null \
+        && mv "${headstart_list}.tmp" "$headstart_list" 2>/dev/null
+    if [ "$unraid_note" == "yes" ]; then
+        /usr/local/emhttp/webGui/scripts/notify -e "Cache Mover Info" -s "Head Filled" -d "$dst_dir/" -i "normal" &
+    fi
 }
 
 ### helper: copy (or move) episode file plus matching sidecars.
@@ -315,9 +348,19 @@ for e in d.get("episodes", []):
     fi
     poolpath=$(disk_to_pool "$diskpath")
     if [ -f "$poolpath" ]; then
-        echo "update access time: $poolpath"
-        touch -a "$poolpath"
-        touch -a "$(dirname "$poolpath")"
+        if is_head "$poolpath"; then
+            if is_active "$plex_path"; then
+                fill_head "$diskpath" "$poolpath"
+            else
+                echo "keep head warm: $poolpath"
+                touch -a "$poolpath"
+                touch -a "$(dirname "$poolpath")"
+            fi
+        else
+            echo "update access time: $poolpath"
+            touch -a "$poolpath"
+            touch -a "$(dirname "$poolpath")"
+        fi
         continue
     fi
     # mtime freshness check (skip files still being written)
@@ -357,6 +400,15 @@ for m in d.get("movies", []):
     poolpath=$(disk_to_pool "$diskpath")
     rsync_source=$(dirname "$diskpath")
     rsync_target=$(dirname "$poolpath")
+    if [ -f "$poolpath" ] && is_head "$poolpath"; then
+        if is_active "$plex_path"; then
+            fill_head "$diskpath" "$poolpath"
+        else
+            echo "keep head warm: $poolpath"
+            touch -a "$rsync_target"
+        fi
+        continue
+    fi
     if [ -d "$rsync_target" ]; then
         echo "update access time: $rsync_target"
         touch -a "$rsync_target"
