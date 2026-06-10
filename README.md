@@ -53,6 +53,11 @@ Notes / caveats:
   probe the END of a file on open (e.g. the MP4 `moov` atom) which lands in the
   not-yet-filled sparse region - restrict `filetypes` if you hit playback issues.
 - Requires Plex Smart Pre-Cache enabled to do the on-play fill.
+- `min_free_space_gb` is respected everywhere: the seeder stops making new heads
+  below the floor, and a fill is skipped (logged, optional notification) if
+  writing the remainder would drop the pool under it. A skipped fill means that
+  one playback may glitch past the head — the trade-off of running the pool near
+  full; free space or add capacity to resolve.
 - The seed pass spins up array disks; schedule it off-peak and use
   `Max New Heads Per Run` to throttle.
 

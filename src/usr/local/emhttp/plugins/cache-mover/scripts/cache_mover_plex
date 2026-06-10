@@ -169,6 +169,18 @@ is_head() {
 ### (move_excl_list / cache_mover3) and untracked as a head.
 fill_head() {
     local diskpath="$1" poolpath="$2" dst_dir
+    local fsize have need avail min_bytes
+    # free-space guard: only the sparse remainder gets written, but make
+    # sure it won't push the pool below min_free_space_gb.
+    fsize=$(stat -c %s "$diskpath" 2>/dev/null)
+    have=$(( $(stat -c %b "$poolpath" 2>/dev/null) * 512 ))
+    need=$(( fsize - have ))
+    avail=$(df -B1 "/mnt/$pool" 2>/dev/null | awk 'NR==2{print $4}')
+    min_bytes=$(( min_free_space_gb * 1024 * 1024 * 1024 ))
+    if [ -n "$avail" ] && [ "$need" -gt 0 ] && [ $((avail - need)) -lt "$min_bytes" ]; then
+        echo "skip fill (free-space guard): would leave < ${min_free_space_gb}GB on /mnt/$pool"
+        return 0
+    fi
     echo "fill head -> full (in place): $diskpath -> $poolpath"
     # --ignore-times is REQUIRED: the head has the source's mtime and the
     # same apparent size (truncated), so rsync's size+mtime quick check

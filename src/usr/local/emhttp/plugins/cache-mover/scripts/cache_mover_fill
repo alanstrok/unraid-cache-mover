@@ -32,6 +32,7 @@ fi
 pool="${pool#/}"
 pool="${pool%/}"
 headstart_list="${headstart_list:-/mnt/user/system/mover/mover_heads.txt}"
+min_free_space_gb="${min_free_space_gb:-10}"
 
 raw="$1"
 [ -z "$raw" ] && exit 0
@@ -72,6 +73,21 @@ poolpath="${diskpath/$dn/$pool}"
 ### only act on tracked heads
 if ! grep -Fxq "$poolpath" "$headstart_list" 2>/dev/null; then
     echo "not a tracked head (already cached or not seeded): $poolpath"
+    exit 0
+fi
+
+### free-space guard: don't let the fill push the pool below the floor.
+### Only the still-sparse remainder (fsize - already-allocated) gets written.
+fsize=$(stat -c %s "$diskpath" 2>/dev/null)
+have=$(( $(stat -c %b "$poolpath" 2>/dev/null) * 512 ))
+need=$(( fsize - have ))
+avail=$(df -B1 "/mnt/$pool" 2>/dev/null | awk 'NR==2{print $4}')
+min_bytes=$(( min_free_space_gb * 1024 * 1024 * 1024 ))
+if [ -n "$avail" ] && [ "$need" -gt 0 ] && [ $((avail - need)) -lt "$min_bytes" ]; then
+    echo "skip fill (free-space guard): filling would leave < ${min_free_space_gb}GB on /mnt/$pool"
+    if [ "$unraid_note" == "yes" ]; then
+        /usr/local/emhttp/webGui/scripts/notify -e "Cache Mover Info" -s "Head fill skipped" -d "/mnt/$pool below ${min_free_space_gb}GB free" -i "warning" &
+    fi
     exit 0
 fi
 
