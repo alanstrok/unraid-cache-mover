@@ -1,0 +1,22 @@
+{
+  "MediaContainer": {
+    "size": 1,
+    "Metadata": [
+      {
+        "type": "episode",
+        "ratingKey": "5006",
+        "grandparentRatingKey": "1001",
+        "parentIndex": 2,
+        "index": 6,
+        "lastViewedAt": 1577836800,
+        "Media": [
+          {
+            "Part": [
+              {"file": "/data/TVRIPS/TestShow/Season 02/TestShow - S02E06.mkv"}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

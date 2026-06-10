@@ -46,6 +46,19 @@ $cachemoversettings_mediaserver_port        = isset($cachemoversettings['mediase
 $cachemoversettings_mediaserver_key        = isset($cachemoversettings['mediaserver_key']) ? $cachemoversettings['mediaserver_key'] : "";
 $cachemoversettings_mediaserver_only        = isset($cachemoversettings['mediaserver_only']) ? $cachemoversettings['mediaserver_only'] : "";
 $cachemoversettings_rewrite_source       = isset($cachemoversettings['rewrite_source']) ? $cachemoversettings['rewrite_source'] : "";
+// Plex Pre-Cache
+$cachemoversettings_precache_enabled        = isset($cachemoversettings['precache_enabled']) ? $cachemoversettings['precache_enabled'] : "";
+$cachemoversettings_precache_episodes       = isset($cachemoversettings['precache_episodes']) ? $cachemoversettings['precache_episodes'] : "2";
+$cachemoversettings_ondeck_max_age_days     = isset($cachemoversettings['ondeck_max_age_days']) ? $cachemoversettings['ondeck_max_age_days'] : "7";
+$cachemoversettings_precache_specials       = isset($cachemoversettings['precache_specials']) ? $cachemoversettings['precache_specials'] : "no";
+$cachemoversettings_precache_include_movies = isset($cachemoversettings['precache_include_movies']) ? $cachemoversettings['precache_include_movies'] : "yes";
+$cachemoversettings_sidecar_dash            = isset($cachemoversettings['sidecar_dash']) ? $cachemoversettings['sidecar_dash'] : "yes";
+$cachemoversettings_precache_move           = isset($cachemoversettings['precache_move']) ? $cachemoversettings['precache_move'] : "no";
+$cachemoversettings_min_free_space_gb      = isset($cachemoversettings['min_free_space_gb']) ? $cachemoversettings['min_free_space_gb'] : "10";
+$cachemoversettings_tv_subfolders             = isset($cachemoversettings['tv_subfolders']) ? $cachemoversettings['tv_subfolders'] : "";
+$cachemoversettings_movie_subfolders          = isset($cachemoversettings['movie_subfolders']) ? $cachemoversettings['movie_subfolders'] : "";
+$cachemoversettings_tv_ondeck_max_age_days    = isset($cachemoversettings['tv_ondeck_max_age_days']) ? $cachemoversettings['tv_ondeck_max_age_days'] : "14";
+$cachemoversettings_movie_ondeck_max_age_days = isset($cachemoversettings['movie_ondeck_max_age_days']) ? $cachemoversettings['movie_ondeck_max_age_days'] : "7";
 ?>
 
 <script>
@@ -216,6 +229,108 @@ Media Server Rewrites:
         <p>please check the mountpoint from your docker, compare how the host path would look like</p>
 		<p>also keep leading / trailing slashes simultan to host value</p>
 		<p>space seperated multiply values are possible in terms multi array is used ...</p>
+    </blockquote>
+
+<div class="title"><span class="left"><i class="fa fa-hand-peace-o title"></i>Plex Smart Pre-Cache</span></div>
+
+Enable Smart Pre-Cache:
+: <select name="precache_enabled" class="narrow">
+    <option value="yes" <?=($cachemoversettings_precache_enabled == 'yes') ? 'selected' : '';?>>Yes</option>
+    <option value="no" <?=($cachemoversettings_precache_enabled != 'yes') ? 'selected' : '';?>>No</option>
+  </select>
+    <blockquote class='inline_help'>
+        <p>When enabled, the plugin uses Plex to figure out what you're watching and keeps the right episodes ready on your fast pool</p>
+        <p>When disabled, falls back to the basic single-file behavior</p>
+        <p>Only works when Media Server Type is set to plex</p>
+    </blockquote>
+
+Transfer Mode:
+: <select name="precache_move" class="narrow">
+    <option value="yes" <?=($cachemoversettings_precache_move == 'yes') ? 'selected' : '';?>>Move (one copy at a time)</option>
+    <option value="no" <?=($cachemoversettings_precache_move != 'yes') ? 'selected' : '';?>>Copy (keep original on array)</option>
+  </select>
+    <blockquote class='inline_help'>
+        <p><b>Move:</b> files are moved to the fast pool and moved back to the array when finished watching. Only one copy exists at a time, saving disk space</p>
+        <p><b>Copy:</b> files are copied to the fast pool; the array keeps the original. The pool copy is deleted when finished watching. Safer but uses more space</p>
+        <p>Files with hardlinks (e.g. torrent seeds) are automatically copied instead of moved to avoid breaking the seed</p>
+    </blockquote>
+
+Copy Subtitles and Extras:
+: <select name="sidecar_dash" class="narrow">
+    <option value="yes" <?=($cachemoversettings_sidecar_dash == 'yes') ? 'selected' : '';?>>Yes</option>
+    <option value="no" <?=($cachemoversettings_sidecar_dash != 'yes') ? 'selected' : '';?>>No</option>
+  </select>
+    <blockquote class='inline_help'>
+        <p>When enabled, subtitle files (.srt, .sub), metadata (.nfo), and thumbnail images are moved alongside the video file</p>
+    </blockquote>
+
+Minimum Free Space (GB):
+: <input type="text" name="min_free_space_gb" class="narrow" maxlength="4" value="<?=$cachemoversettings_min_free_space_gb;?>" placeholder="10" >
+    <blockquote class='inline_help'>
+        <p>Stop pre-caching when the fast pool drops below this many GB of free space</p>
+        <p>Prevents the pool from filling up completely, leaving room for torrents and other activity</p>
+        <p>Eviction (cleaning up watched content) always runs regardless of free space</p>
+    </blockquote>
+
+<div class="title"><span class="left"><i class="fa fa-hand-peace-o title"></i>Plex Smart Pre-Cache - TV Shows</span></div>
+
+TV Show Folders:
+: <input type="text" name="tv_subfolders" class="narrow" maxlength="99" value="<?=$cachemoversettings_tv_subfolders;?>" placeholder="Series Anime" >
+    <blockquote class='inline_help'>
+        <p>Folder names that contain your TV shows, separated by spaces (e.g. <b>Series Anime</b>)</p>
+        <p>Only episodes inside these folders will be pre-cached</p>
+        <p>Leave empty to use the general "Media subfolders" setting at the top of this page</p>
+    </blockquote>
+
+Episodes Ahead:
+: <input type="text" name="precache_episodes" class="narrow" maxlength="3" value="<?=$cachemoversettings_precache_episodes;?>" placeholder="2" >
+    <blockquote class='inline_help'>
+        <p>How many upcoming episodes to keep ready on the fast pool, on top of what you're currently watching</p>
+        <p>Example: <b>2</b> means the episode you're watching + 2 upcoming = 3 episodes total on the fast pool</p>
+        <p>Automatically walks across season boundaries (e.g. after a season finale, the next season's first episode is queued)</p>
+    </blockquote>
+
+Only Pre-Cache Recently Watched (days):
+: <input type="text" name="tv_ondeck_max_age_days" class="narrow" maxlength="3" value="<?=$cachemoversettings_tv_ondeck_max_age_days;?>" placeholder="14" >
+    <blockquote class='inline_help'>
+        <p>Only pre-cache shows you've watched within the last X days</p>
+        <p>Shows you started months ago and forgot about won't waste space on the fast pool</p>
+    </blockquote>
+
+Include Specials:
+: <select name="precache_specials" class="narrow">
+    <option value="yes" <?=($cachemoversettings_precache_specials == 'yes') ? 'selected' : '';?>>Yes</option>
+    <option value="no" <?=($cachemoversettings_precache_specials != 'yes') ? 'selected' : '';?>>No</option>
+  </select>
+    <blockquote class='inline_help'>
+        <p>Whether to include special episodes (Season 0) when queuing upcoming episodes</p>
+    </blockquote>
+
+<div class="title"><span class="left"><i class="fa fa-hand-peace-o title"></i>Plex Smart Pre-Cache - Movies</span></div>
+
+Movie Folders:
+: <input type="text" name="movie_subfolders" class="narrow" maxlength="99" value="<?=$cachemoversettings_movie_subfolders;?>" placeholder="Films Movies" >
+    <blockquote class='inline_help'>
+        <p>Folder names that contain your movies, separated by spaces (e.g. <b>Films Movies</b>)</p>
+        <p>Only movies inside these folders will be pre-cached</p>
+        <p>Leave empty to use the general "Media subfolders" setting at the top of this page</p>
+    </blockquote>
+
+Pre-Cache Movies:
+: <select name="precache_include_movies" class="narrow">
+    <option value="yes" <?=($cachemoversettings_precache_include_movies == 'yes') ? 'selected' : '';?>>Yes</option>
+    <option value="no" <?=($cachemoversettings_precache_include_movies != 'yes') ? 'selected' : '';?>>No</option>
+  </select>
+    <blockquote class='inline_help'>
+        <p>When enabled, movies you're watching or have on your Continue Watching list are also moved to the fast pool</p>
+        <p>The entire movie folder is transferred (video + subtitles + extras)</p>
+    </blockquote>
+
+Only Pre-Cache Recently Watched (days):
+: <input type="text" name="movie_ondeck_max_age_days" class="narrow" maxlength="3" value="<?=$cachemoversettings_movie_ondeck_max_age_days;?>" placeholder="7" >
+    <blockquote class='inline_help'>
+        <p>Only pre-cache movies you've watched within the last X days</p>
+        <p>Shorter than TV shows because movies are larger and you typically don't rewatch them right away</p>
     </blockquote>
 
 <div class="title"><span class="left"><i class="fa fa-hand-peace-o title"></i>Cache Mover Setup - Recycle Setup</span></div>

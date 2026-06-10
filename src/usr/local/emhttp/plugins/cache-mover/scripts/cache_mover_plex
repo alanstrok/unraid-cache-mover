@@ -1,0 +1,406 @@
+#!/bin/bash
+#
+# cache_mover_plex - Plex-aware per-episode cache driver.
+#
+# Invoked by cache_mover1 when mediaserver_type=plex and precache_enabled=yes.
+# Delegates Plex API work to plex_api.py, then performs file-level rsync/rm
+# using the same idioms as cache_mover1.
+#
+
+################################
+source /boot/config/plugins/cache-mover/cachemoversettings
+################################
+listupdater="/usr/local/emhttp/plugins/cache-mover/scripts/cache_mover4"
+plex_api="/usr/local/emhttp/plugins/cache-mover/scripts/plex_api.py"
+
+### Check if another instance of this Program is running
+pidof -o %PPID -x $0 >/dev/null && echo "ERROR: Program $0 already running" && exit 1
+
+### Log any unexpected signal so we can tell if something external is killing us.
+trap 'echo "cache_mover_plex received signal at $(date \"+%H:%M:%S\")"; exit 143' INT TERM HUP
+
+################################
+if [ "$unraid_syslog" == "yes" ]; then
+LOG_FIFO=$(mktemp -u /tmp/cm_plex_log.XXXXXX)
+mkfifo "$LOG_FIFO"
+# Logger drains the fifo in the background. It will exit when the
+# write end closes (= when the main script exits or the fifo is
+# unlinked).  Using a named fifo instead of process-substitution
+# exec > >(...) avoids orphaned subshells that can accumulate when
+# cron fires every few minutes.
+(while IFS= read -r line; do
+    logger "cache-mover: plex: ${line}"
+done < "$LOG_FIFO") &
+LOG_PID=$!
+exec > "$LOG_FIFO" 2>&1
+# Clean up the fifo and logger on exit.
+cleanup_log() {
+    exec > /dev/null 2>&1
+    rm -f "$LOG_FIFO"
+    wait "$LOG_PID" 2>/dev/null
+}
+trap 'echo "cache_mover_plex received signal at $(date \"+%H:%M:%S\")"; cleanup_log; exit 143' INT TERM HUP
+trap 'cleanup_log' EXIT
+fi
+
+### remove leading/trailing slashes on pool
+pool="${pool#/}"
+pool="${pool%/}"
+
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
+### sanity checks
+if [ -z "$mediaserver_host" ] || [ -z "$mediaserver_port" ] || [ -z "$mediaserver_key" ]; then
+    echo "plex config incomplete (host/port/key), aborting"
+    exit 0
+fi
+if [ -z "$pool" ]; then
+    echo "pool not set, aborting"
+    exit 0
+fi
+
+### defaults for new config keys (fall back if user didn't set them)
+precache_episodes="${precache_episodes:-2}"
+ondeck_max_age_days="${ondeck_max_age_days:-7}"
+tv_ondeck_max_age_days="${tv_ondeck_max_age_days:-${ondeck_max_age_days:-14}}"
+movie_ondeck_max_age_days="${movie_ondeck_max_age_days:-${ondeck_max_age_days:-7}}"
+tv_subfolders="${tv_subfolders:-}"
+movie_subfolders="${movie_subfolders:-}"
+precache_include_movies="${precache_include_movies:-yes}"
+precache_specials="${precache_specials:-no}"
+precache_move="${precache_move:-no}"
+min_free_space_gb="${min_free_space_gb:-10}"
+sidecar_dash="${sidecar_dash:-yes}"
+wait_todo="${wait_todo:-120}"
+target_keephours="${target_keephours:-user0}"
+
+### 1. fetch targets from Plex
+targets=$(python3 "$plex_api" targets \
+    --host "$mediaserver_host" --port "$mediaserver_port" \
+    --scheme "$mediaserver_url" --token "$mediaserver_key" \
+    --precache-episodes "$precache_episodes" \
+    --ondeck-max-age-days "$ondeck_max_age_days" \
+    --tv-ondeck-max-age-days "$tv_ondeck_max_age_days" \
+    --movie-ondeck-max-age-days "$movie_ondeck_max_age_days" \
+    --include-movies "$precache_include_movies" \
+    --include-specials "$precache_specials" \
+    --subfolders "$subfolders" \
+    --tv-subfolders "$tv_subfolders" \
+    --movie-subfolders "$movie_subfolders" \
+    --filetypes "$filetypes" \
+    --exclusions "$exclusions" 2>&1)
+rc=$?
+if [ $rc -ne 0 ] || [ -z "$targets" ]; then
+    echo "plex unreachable or empty, skipping run ($targets)"
+    $listupdater
+    exit 0
+fi
+
+### helper: rewrite a plex (docker) path into a host path via $rewrite_source
+rewrite_plex_path() {
+    local p="$1"
+    if [ -n "$rewrite_source" ]; then
+        for rw in $rewrite_source; do
+            local s="${rw%%:*}"
+            local t="${rw##*:}"
+            s="${s%/}"
+            t="${t%/}"
+            p="${p//$s/$t}"
+        done
+    fi
+    echo "$p"
+}
+
+### helper: resolve host path -> physical disk path
+resolve_diskpath() {
+    local up="$1"
+    local rel="${up#/mnt/user/}"
+    local d
+    for d in /mnt/disk[0-9]* /mnt/disks/*; do
+        [ -f "$d/$rel" ] && { echo "$d/$rel"; return 0; }
+    done
+    # Fallback: search across disks by relative path suffix.
+    find /mnt/disk* -type f -path "*${rel}" -print -quit 2>/dev/null
+}
+
+### helper: disk path -> pool path (preserves fuse layout)
+disk_to_pool() {
+    local dp="$1"
+    local dn
+    dn=$(echo "$dp" | cut -f 3 -d "/")
+    if [ "$dn" == "disks" ]; then
+        local subdisk
+        subdisk=$(echo "$dp" | cut -f 4 -d "/")
+        dn="disks/$subdisk"
+    fi
+    echo "${dp/$dn/$pool}"
+}
+
+### helper: check if a file has hardlinks (link count > 1).
+### Returns 0 (true) if hardlinked, 1 (false) if not.
+has_hardlinks() {
+    local f="$1"
+    local links
+    links=$(stat -c %h "$f" 2>/dev/null)
+    [ -n "$links" ] && [ "$links" -gt 1 ]
+}
+
+### helper: check if the pool has enough free space.
+### Returns 0 (true) if free space >= min_free_space_gb, 1 (false) if not.
+pool_has_space() {
+    local avail_gb
+    avail_gb=$(df -BG "/mnt/$pool" 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G')
+    [ -n "$avail_gb" ] && [ "$avail_gb" -ge "$min_free_space_gb" ]
+}
+
+### helper: copy (or move) episode file plus matching sidecars.
+### In move mode, skips files with hardlinks entirely (likely a torrent
+### seed — will be picked up on a future run when the seed is done).
+copy_with_sidecars() {
+    local diskpath="$1"
+    local poolpath="$2"
+    if [ "$precache_move" == "yes" ] && has_hardlinks "$diskpath"; then
+        echo "skipping (hardlinked, likely seeding): $diskpath"
+        return
+    fi
+    local src_dir dst_dir stem_file stem
+    src_dir=$(dirname "$diskpath")
+    dst_dir=$(dirname "$poolpath")
+    stem_file=$(basename "$diskpath")
+    stem="${stem_file%.*}"
+    mkdir -p "$dst_dir"
+    shopt -s nullglob
+    local matches=("$src_dir/$stem".*)
+    if [ "$sidecar_dash" == "yes" ]; then
+        matches+=("$src_dir/$stem"-*)
+    fi
+    shopt -u nullglob
+    if [ ${#matches[@]} -gt 0 ]; then
+        if [ "$precache_move" == "yes" ]; then
+            $rsync_copy --partial --remove-source-files "${matches[@]}" "$dst_dir/"
+            find "$src_dir" -maxdepth 0 -type d -empty -delete 2>/dev/null
+        else
+            $rsync_copy --partial "${matches[@]}" "$dst_dir/"
+        fi
+    fi
+    if [ "$move_excl" == "yes" ]; then
+        echo "$dst_dir" >> "$move_excl_list" 2>/dev/null
+        awk -i inplace '!seen[$0]++' "$move_excl_list" 2>/dev/null
+    fi
+}
+
+### helper: evict episode + sidecars from SSD.
+### In move mode: move back to the array via /mnt/$target_keephours.
+### In copy mode: just delete the SSD copy (array still has it).
+remove_with_sidecars() {
+    local cache_file="$1"
+    local dst_dir stem_file stem
+    dst_dir=$(dirname "$cache_file")
+    stem_file=$(basename "$cache_file")
+    stem="${stem_file%.*}"
+    shopt -s nullglob
+    local to_rm=("$dst_dir/$stem".*)
+    if [ "$sidecar_dash" == "yes" ]; then
+        to_rm+=("$dst_dir/$stem"-*)
+    fi
+    shopt -u nullglob
+    if [ "$precache_move" == "yes" ]; then
+        # Move back to the array. Replace the pool segment with
+        # $target_keephours (typically "user0" which lets Unraid
+        # allocate to any array disk).
+        local rel="${cache_file#/mnt/$pool/}"
+        local array_dir="/mnt/$target_keephours/$(dirname "$rel")"
+        mkdir -p "$array_dir"
+        if [ ${#to_rm[@]} -gt 0 ]; then
+            echo "evict (move back): ${to_rm[*]} -> $array_dir/"
+            $rsync_copy --partial --remove-source-files "${to_rm[@]}" "$array_dir/"
+            if [ "$unraid_note" == "yes" ]; then
+                /usr/local/emhttp/webGui/scripts/notify -e "Cache Mover Info" -s "Evict (moved back)" -d "$array_dir/" -i "normal" &
+            fi
+        fi
+    else
+        local f
+        for f in "${to_rm[@]}"; do
+            echo "evict: $f"
+            rm -f "$f"
+            if [ "$unraid_note" == "yes" ]; then
+                /usr/local/emhttp/webGui/scripts/notify -e "Cache Mover Info" -s "Evict" -d "$f" -i "normal" &
+            fi
+        done
+    fi
+    find "$dst_dir" -type d -empty -delete 2>/dev/null
+}
+
+### Build an "active files" lookup (one path per line) - never evict these.
+active_list=$(echo "$targets" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+for e in d.get("active", []):
+    print(e["plex_path"])
+')
+
+is_active() {
+    local p="$1"
+    [ -z "$active_list" ] && return 1
+    printf "%s\n" "$active_list" | grep -Fxq "$p"
+}
+
+################################
+### 1b. Pre-populate the mover-tuning ignore list with the PREDICTED
+### target parent dirs of every target (episodes + movies). Running
+### $listupdater now - before any rsync - ensures Unraid's Mover sees
+### these paths in its ignore list and won't race us during the copies.
+################################
+if [ "$move_excl" == "yes" ]; then
+    echo "$targets" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+for key in ("episodes", "movies"):
+    for e in d.get(key, []):
+        print(e["plex_path"])
+' | while IFS= read -r plex_path; do
+        [ -z "$plex_path" ] && continue
+        host_path=$(rewrite_plex_path "$plex_path")
+        rel="${host_path#/mnt/user/}"
+        pred_dir=$(dirname "/mnt/$pool/$rel")
+        echo "$pred_dir" >> "$move_excl_list" 2>/dev/null
+    done
+    awk -i inplace '!seen[$0]++' "$move_excl_list" 2>/dev/null
+    $listupdater
+fi
+
+################################
+### 2. Evict watched episodes first (to free space before copying)
+################################
+echo "$targets" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+for w in d.get("watched", []):
+    print(w["plex_path"])
+' | while IFS= read -r plex_path; do
+    [ -z "$plex_path" ] && continue
+    if is_active "$plex_path"; then
+        continue
+    fi
+    host_path=$(rewrite_plex_path "$plex_path")
+    rel="${host_path#/mnt/user/}"
+    cache_file="/mnt/$pool/$rel"
+    [ ! -f "$cache_file" ] && continue
+    # skip if currently open by any process (fuser is O(1) vs the
+    # old ls -l /proc/*/fd/* glob which expanded tens of thousands
+    # of paths and consumed hundreds of MB on busy systems)
+    if fuser "$cache_file" >/dev/null 2>&1; then
+        echo "evict skip (in use): $cache_file"
+        continue
+    fi
+    remove_with_sidecars "$cache_file"
+done
+
+################################
+### 3. Copy episodes (anchor + next N unwatched)
+################################
+echo "$targets" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+for e in d.get("episodes", []):
+    print(e["plex_path"])
+' | while IFS= read -r plex_path; do
+    [ -z "$plex_path" ] && continue
+    host_path=$(rewrite_plex_path "$plex_path")
+    diskpath=$(resolve_diskpath "$host_path")
+    if [ -z "$diskpath" ]; then
+        echo "episode not found on any disk: $host_path"
+        continue
+    fi
+    poolpath=$(disk_to_pool "$diskpath")
+    if [ -f "$poolpath" ]; then
+        echo "update access time: $poolpath"
+        touch -a "$poolpath"
+        touch -a "$(dirname "$poolpath")"
+        continue
+    fi
+    # mtime freshness check (skip files still being written)
+    now=$(date +%s)
+    mt=$(stat -c %Y "$diskpath" 2>/dev/null)
+    if [ -n "$mt" ] && [ $((now - mt)) -lt $wait_todo ]; then
+        echo "too fresh ($((now - mt))s), skipping: $diskpath"
+        continue
+    fi
+    if ! pool_has_space; then
+        echo "pool /mnt/$pool below ${min_free_space_gb}GB free, stopping episode pre-cache"
+        break
+    fi
+    echo "pre-cache episode: $diskpath -> $poolpath"
+    copy_with_sidecars "$diskpath" "$poolpath"
+    if [ "$unraid_note" == "yes" ]; then
+        /usr/local/emhttp/webGui/scripts/notify -e "Cache Mover Info" -s "Pre-Cache Episode" -d "$(dirname "$poolpath")/" -i "normal" &
+    fi
+done
+
+################################
+### 4. Copy movies (whole-folder, legacy behavior)
+################################
+echo "$targets" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+for m in d.get("movies", []):
+    print(m["plex_path"])
+' | while IFS= read -r plex_path; do
+    [ -z "$plex_path" ] && continue
+    host_path=$(rewrite_plex_path "$plex_path")
+    diskpath=$(resolve_diskpath "$host_path")
+    if [ -z "$diskpath" ]; then
+        echo "movie not found on any disk: $host_path"
+        continue
+    fi
+    poolpath=$(disk_to_pool "$diskpath")
+    rsync_source=$(dirname "$diskpath")
+    rsync_target=$(dirname "$poolpath")
+    if [ -d "$rsync_target" ]; then
+        echo "update access time: $rsync_target"
+        touch -a "$rsync_target"
+        continue
+    fi
+    now=$(date +%s)
+    mt=$(stat -c %Y "$diskpath" 2>/dev/null)
+    if [ -n "$mt" ] && [ $((now - mt)) -lt $wait_todo ]; then
+        echo "too fresh ($((now - mt))s), skipping: $diskpath"
+        continue
+    fi
+    if ! pool_has_space; then
+        echo "pool /mnt/$pool below ${min_free_space_gb}GB free, stopping movie pre-cache"
+        break
+    fi
+    # Skip entire movie folder if any file has hardlinks (torrent seed).
+    if [ "$precache_move" == "yes" ]; then
+        movie_has_hardlinks=""
+        while IFS= read -r -d '' mf; do
+            if has_hardlinks "$mf"; then movie_has_hardlinks="yes"; break; fi
+        done < <(find "$rsync_source" -type f -print0)
+        if [ -n "$movie_has_hardlinks" ]; then
+            echo "skipping movie folder (hardlinked, likely seeding): $rsync_source"
+            continue
+        fi
+    fi
+    echo "pre-cache movie folder: $rsync_source/ -> $rsync_target/"
+    mkdir -p "$rsync_target"
+    if [ "$precache_move" == "yes" ]; then
+        $rsync_copy --partial --remove-source-files "$rsync_source/" "$rsync_target/"
+        find "$rsync_source" -maxdepth 0 -type d -empty -delete 2>/dev/null
+    else
+        $rsync_copy --partial "$rsync_source/" "$rsync_target/"
+    fi
+    if [ "$move_excl" == "yes" ]; then
+        echo "$rsync_target" >> "$move_excl_list" 2>/dev/null
+        awk -i inplace '!seen[$0]++' "$move_excl_list" 2>/dev/null
+    fi
+    if [ "$unraid_note" == "yes" ]; then
+        /usr/local/emhttp/webGui/scripts/notify -e "Cache Mover Info" -s "Pre-Cache Movie" -d "$rsync_target/" -i "normal" &
+    fi
+done
+
+### update mover ignore list ###
+$listupdater
+
+exit 0

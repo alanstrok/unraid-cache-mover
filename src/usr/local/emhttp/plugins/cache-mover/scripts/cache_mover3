@@ -33,25 +33,31 @@ targetdir=""
 for folder in $(cat "$move_excl_list")
 	do
 	find "$folder/" -type d -empty -delete
-	if [ -d $folder ]; then
+	if [ -d "$folder" ]; then
 		last_access=$[$(date +%s)-$(stat --printf "%X" "$folder/")]
 		last_access=$(echo $last_access | awk '{printf "%d", $1/3600}')
 		keephours=""
-		if [[ "$folder" =~ "$subfolder_keep_sub/" ]]; then
+		if [ -n "$subfolder_keep_sub" ] && [[ "$folder" =~ "$subfolder_keep_sub/" ]]; then
 			keephours=$time_keephours_sub
 		else
 			keephours=$time_keephours
 		fi
-		if [ ! -z $target_keephours ]; then
+		if [ -z "$keephours" ]; then
+			keephours=$time_keephours
+		fi
+		if [ -z "$keephours" ]; then
+			keephours="24"
+		fi
+		if [ ! -z "$target_keephours" ]; then
 			targetdir=$(echo ${folder/$pool/$target_keephours})
 		else
 			targetdir=$(echo ${folder/"/mnt/$pool"/})
 			targetdir=$(ls -d /mnt/disk*/$targetdir | grep -v "$pool") 2> /dev/null
-			if [ -z $targetdir ];then
+			if [ -z "$targetdir" ];then
 				targetdir=$(ls -d /mnt/disk*/*/$targetdir | grep -v "$pool") 2> /dev/null
 			fi
 		fi
-		if [ $last_access -gt $keephours ]; then
+		if [ "$last_access" -gt "$keephours" ]; then
 			if [ -d $targetdir/ ]; then
 				if [ $(du -sh $folder/ | sed 's/\s.*$//') == $(du -sh $targetdir/ | sed 's/\s.*$//') ]; then
 					echo "$targetdir equal in size, removing from $pool";
