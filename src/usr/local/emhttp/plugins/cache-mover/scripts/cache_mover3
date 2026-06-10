@@ -30,10 +30,24 @@ export LC_ALL=en_US.UTF-8
 IFS=$'\n'
 targetdir=""
 
+### precompute the set of dirs that still hold a sparse head stub, so we
+### can skip them below (their size won't match the array copy and we must
+### NOT remove them from the exclude file - that would un-pin the head).
+headstart_list="${headstart_list:-/mnt/user/system/mover/mover_heads.txt}"
+head_dirs=""
+if [ -s "$headstart_list" ]; then
+	head_dirs=$(mktemp)
+	while IFS= read -r hp; do [ -n "$hp" ] && dirname "$hp"; done < "$headstart_list" | sort -u > "$head_dirs"
+fi
+
 for folder in $(cat "$move_excl_list")
 	do
 	find "$folder/" -type d -empty -delete
 	if [ -d "$folder" ]; then
+		if [ -n "$head_dirs" ] && grep -Fxq "$folder" "$head_dirs"; then
+			echo "$folder holds a head stub, skipping eviction"
+			continue
+		fi
 		last_access=$[$(date +%s)-$(stat --printf "%X" "$folder/")]
 		last_access=$(echo $last_access | awk '{printf "%d", $1/3600}')
 		keephours=""
@@ -119,6 +133,8 @@ for folder in $(cat "$move_excl_list")
 		mv temp_show_list $move_excl_list
 	fi
 	done
+
+[ -n "$head_dirs" ] && rm -f "$head_dirs"
 
 ### update mover ignore list ###
 $listupdater

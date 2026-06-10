@@ -41,9 +41,11 @@ it) and the file is handed to the normal keep/evict lifecycle.
 How it works:
 - A seeder (`cache_mover_head`, on its own cron) walks the array and creates the
   sparse heads for files matching your Media subfolders / filetypes / exclusions.
-- Heads are tracked in `headstart_list` and pinned on the pool via the mover
-  ignore list. They are kept out of the regular `move_excl_list`, so the cleaner
-  never mistakes a sparse head for a finished copy.
+- Head directories are added to the plugin's exclude file (`move_excl_list`)
+  like any cached content, so `cache_mover4` pins them in the mover ignore list
+  and the Mover won't move a stub off the pool. They're also tracked in
+  `headstart_list`, so the cleaner (`cache_mover3`) skips a folder while it still
+  holds a sparse stub, and the fill promotes it once watched.
 - Unused heads are evicted after `headstart_keephours`.
 
 Notes / caveats:

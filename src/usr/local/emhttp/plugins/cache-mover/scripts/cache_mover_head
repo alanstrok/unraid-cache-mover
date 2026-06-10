@@ -14,10 +14,11 @@
 # playback continues seamlessly from the pool, and the file is handed
 # off to the normal cache lifecycle (move_excl_list / cache_mover3).
 #
-# Heads are tracked in $headstart_list. They are deliberately kept OUT
-# of move_excl_list so cache_mover3 never mistakes a sparse head for a
-# complete copy. cache_mover4 folds the head directories into the mover
-# ignore list so Unraid's mover won't move a head off the pool.
+# Head dirs go into the plugin's exclude file (move_excl_list) like any
+# other cached content, so cache_mover4 syncs them into the mover ignore
+# list and Unraid's mover won't move a head off the pool. Heads are also
+# tracked in $headstart_list so cache_mover3 skips them while they are
+# still sparse stubs (their size won't match the array copy).
 #
 # NOTE: this is best suited to direct-play containers (e.g. .mkv). Some
 # clients/containers probe the END of a file on open (e.g. the MP4 moov
@@ -151,9 +152,19 @@ while IFS= read -r hp; do
             continue
         fi
         echo "evict stale head (${la}h): $hp"
+        hd=$(dirname "$hp")
         rm -f "$hp"
-        find "$(dirname "$hp")" -type d -empty -delete 2>/dev/null
         drop_head "$hp"
+        # if the dir is now empty, drop it from the exclude file too so
+        # the mover isn't pinning a folder we no longer cache
+        if [ -z "$(ls -A "$hd" 2>/dev/null)" ]; then
+            if [ "$move_excl" == "yes" ]; then
+                grep -Fxv "$hd" "$move_excl_list" > "${move_excl_list}.tmp" 2>/dev/null \
+                    && mv "${move_excl_list}.tmp" "$move_excl_list"
+            fi
+            rmdir "$hd" 2>/dev/null
+        fi
+        find "$(dirname "$hd")" -type d -empty -delete 2>/dev/null
     fi
 done < "$headstart_list"
 
@@ -201,6 +212,13 @@ while IFS= read -r diskpath; do
     [ -n "$mt" ] && touch -m -d "@$mt" "$poolpath" 2>/dev/null
     echo "head: ${headstart_mb}MB of $diskpath -> $poolpath"
     echo "$poolpath" >> "$headstart_list"
+    # add the head's dir to the plugin's exclude file like any cached
+    # content; cache_mover4 syncs it into the mover ignore list, and
+    # cache_mover3 skips it while it is still a sparse stub.
+    if [ "$move_excl" == "yes" ]; then
+        echo "$(dirname "$poolpath")" >> "$move_excl_list" 2>/dev/null
+        awk -i inplace '!seen[$0]++' "$move_excl_list" 2>/dev/null
+    fi
     created=$((created + 1))
 done < <(find /mnt/disk[0-9]* /mnt/disks/* -type f 2>/dev/null \
             | grep -E "$subf" \
