@@ -1,0 +1,95 @@
+#!/bin/bash
+#
+# cache_mover_fill <plex_or_host_file_path>
+#
+# Fill a sparse "head start" stub into a full copy IN PLACE, if the given
+# file maps to a tracked head. Safe no-op if the file is not a head
+# (already fully cached, or never seeded).
+#
+# Called by the Plex webhook listener (plex_webhook.py) the moment
+# playback starts, so the fill is triggered within ~1s of pressing play.
+# Reuses the exact in-place fill validated by hand:
+#   rsync -a --inplace --ignore-times   (same inode, fills sparse tail)
+#
+################################
+source /boot/config/plugins/cache-mover/cachemoversettings
+################################
+listupdater="/usr/local/emhttp/plugins/cache-mover/scripts/cache_mover4"
+
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
+if [ "$unraid_syslog" == "yes" ]; then
+log_message() {
+  while IFS= read -r line; do
+    logger "cache-mover: fill: ${line}"
+  done
+}
+exec > >(log_message) 2>&1
+fi
+
+### remove leading/trailing slashes on pool
+pool="${pool#/}"
+pool="${pool%/}"
+headstart_list="${headstart_list:-/mnt/user/system/mover/mover_heads.txt}"
+
+raw="$1"
+[ -z "$raw" ] && exit 0
+
+### rewrite plex (docker) path -> host path
+p="$raw"
+if [ -n "$rewrite_source" ]; then
+    for rw in $rewrite_source; do
+        s="${rw%%:*}"
+        t="${rw##*:}"
+        s="${s%/}"
+        t="${t%/}"
+        p="${p//$s/$t}"
+    done
+fi
+host_path="$p"
+
+### resolve host path -> physical disk path
+rel="${host_path#/mnt/user/}"
+diskpath=""
+for d in /mnt/disk[0-9]* /mnt/disks/*; do
+    [ -f "$d/$rel" ] && diskpath="$d/$rel" && break
+done
+if [ -z "$diskpath" ]; then
+    # last resort: search by suffix
+    diskpath=$(find /mnt/disk* -type f -path "*${rel}" -print -quit 2>/dev/null)
+fi
+[ -z "$diskpath" ] && { echo "not found on any disk: $host_path"; exit 0; }
+
+### disk path -> pool path (preserve fuse layout)
+dn=$(echo "$diskpath" | cut -f 3 -d "/")
+if [ "$dn" == "disks" ]; then
+    sub=$(echo "$diskpath" | cut -f 4 -d "/")
+    dn="disks/$sub"
+fi
+poolpath="${diskpath/$dn/$pool}"
+
+### only act on tracked heads
+if ! grep -Fxq "$poolpath" "$headstart_list" 2>/dev/null; then
+    echo "not a tracked head (already cached or not seeded): $poolpath"
+    exit 0
+fi
+
+echo "fill head -> full (in place): $diskpath -> $poolpath"
+rsync -a --inplace --ignore-times "$diskpath" "$poolpath"
+
+### promote into the normal cache lifecycle and untrack as a head
+dst_dir=$(dirname "$poolpath")
+if [ "$move_excl" == "yes" ]; then
+    echo "$dst_dir" >> "$move_excl_list" 2>/dev/null
+    awk -i inplace '!seen[$0]++' "$move_excl_list" 2>/dev/null
+fi
+grep -Fxv "$poolpath" "$headstart_list" > "${headstart_list}.tmp" 2>/dev/null \
+    && mv "${headstart_list}.tmp" "$headstart_list" 2>/dev/null
+
+if [ "$unraid_note" == "yes" ]; then
+    /usr/local/emhttp/webGui/scripts/notify -e "Cache Mover Info" -s "Head Filled" -d "$dst_dir/" -i "normal" &
+fi
+
+$listupdater
+exit 0
