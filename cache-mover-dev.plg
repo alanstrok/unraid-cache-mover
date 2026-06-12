@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "cache-mover">
 <!ENTITY author    "alanstrok">
-<!ENTITY version   "2026.04.29d">
+<!ENTITY version   "2026.06.12">
 <!ENTITY launch    "Settings/cache-mover">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/alanstrok/unraid-cache-mover/claude/tv-show-episode-moving-G9EMM">
 <!ENTITY pluginURL "&gitURL;/cache-mover-dev.plg">
@@ -20,6 +20,10 @@
         support="https://github.com/alanstrok/unraid-cache-mover">
 
 <CHANGES>
+ ###2026.06.12 (plex-dev branch)
+  - safety: eviction now checks the file exists on the array before deleting from pool
+  - files that only exist on the pool (e.g. torrents with hardlinks) are skipped with "evict skip (no array copy)"
+
  ###2026.04.29d (plex-dev branch)
   - minimum free space guard: stop pre-caching when pool drops below X GB (default 10)
   - eviction always runs regardless of free space
@@ -93,7 +97,7 @@
 
 <FILE Name="&plgPATH;/&plgNAME;.txz" Run="upgradepkg --install-new">
 <URL>&gitURL;/packages/&name;.txz</URL>
-<MD5>cb3f05ca958381e12b3116b3565ce71b</MD5>
+<MD5>ff538ced4ace021e0b91cb113522b135</MD5>
 </FILE>
 
 <FILE Name="&plgPATH;/fdclose.txz" Run="upgradepkg --install-new" Min="6.12.13">
