@@ -192,9 +192,26 @@ copy_with_sidecars() {
 
 ### helper: evict episode + sidecars from SSD.
 ### In move mode: move back to the array via /mnt/$target_keephours.
-### In copy mode: just delete the SSD copy (array still has it).
+### In copy mode: just delete the SSD copy — but ONLY if the file
+### exists on the array. If the array has no copy, skip eviction to
+### avoid deleting the only copy of the file.
 remove_with_sidecars() {
     local cache_file="$1"
+    local rel="${cache_file#/mnt/$pool/}"
+
+    # Safety check: verify the file exists on the array before evicting.
+    # Skip this check in move mode (move-back creates the array copy).
+    if [ "$precache_move" != "yes" ]; then
+        local array_exists=""
+        for d in /mnt/disk[0-9]* /mnt/disks/*; do
+            [ -f "$d/$rel" ] && { array_exists="yes"; break; }
+        done
+        if [ -z "$array_exists" ]; then
+            echo "evict skip (no array copy): $cache_file"
+            return
+        fi
+    fi
+
     local dst_dir stem_file stem
     dst_dir=$(dirname "$cache_file")
     stem_file=$(basename "$cache_file")
@@ -206,10 +223,6 @@ remove_with_sidecars() {
     fi
     shopt -u nullglob
     if [ "$precache_move" == "yes" ]; then
-        # Move back to the array. Replace the pool segment with
-        # $target_keephours (typically "user0" which lets Unraid
-        # allocate to any array disk).
-        local rel="${cache_file#/mnt/$pool/}"
         local array_dir="/mnt/$target_keephours/$(dirname "$rel")"
         mkdir -p "$array_dir"
         if [ ${#to_rm[@]} -gt 0 ]; then
