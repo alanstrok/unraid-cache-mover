@@ -44,6 +44,7 @@ $cachemoversettings_mediaserver_url       = isset($cachemoversettings['mediaserv
 $cachemoversettings_mediaserver_host        = isset($cachemoversettings['mediaserver_host']) ? $cachemoversettings['mediaserver_host'] : "";
 $cachemoversettings_mediaserver_port        = isset($cachemoversettings['mediaserver_port']) ? $cachemoversettings['mediaserver_port'] : "";
 $cachemoversettings_mediaserver_key        = isset($cachemoversettings['mediaserver_key']) ? $cachemoversettings['mediaserver_key'] : "";
+$cachemoversettings_mediaserver_extra        = isset($cachemoversettings['mediaserver_extra']) ? $cachemoversettings['mediaserver_extra'] : "";
 $cachemoversettings_mediaserver_only        = isset($cachemoversettings['mediaserver_only']) ? $cachemoversettings['mediaserver_only'] : "";
 $cachemoversettings_rewrite_source       = isset($cachemoversettings['rewrite_source']) ? $cachemoversettings['rewrite_source'] : "";
 // Plex Pre-Cache
@@ -214,6 +215,17 @@ Media Server API Key(Token):
         <p>API Key (emby, jelly) or Token (plex) to your Mediaserver</p>
 		<p>emby, jelly, for API Key - Media Server Web UI,Settings, API, add ...</p>
 		<p>plex, for Token - https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/</p>
+    </blockquote>
+
+Additional Plex Servers:
+: <input type="text" name="mediaserver_extra" class="narrow" maxlength="499" value="<?=$cachemoversettings_mediaserver_extra;?>" placeholder="192.168.1.72|TOKEN2 192.168.1.73|TOKEN3" >
+    <blockquote class='inline_help'>
+        <p>Plex only, Smart Pre-Cache only. For multiple Plex servers sharing the <b>same</b> library and the same file paths (e.g. one server per household/user)</p>
+        <p>Space separated, one entry per extra server (the primary is configured above). Each entry is pipe separated:</p>
+        <p><b>host|token</b> (port and http/https inherited from the primary), or <b>host|port|token</b>, or <b>host|port|token|scheme</b></p>
+        <p>Example: <b>192.168.1.72|abcd1234 192.168.1.73|wxyz5678</b></p>
+        <p>What every server is watching / has on-deck is kept; a file is only evicted when <b>no</b> server still wants it</p>
+        <p>If any extra server is unreachable, pre-caching still runs but eviction is skipped that cycle to avoid deleting files another server needs</p>
     </blockquote>
 
 Media Server Mode:

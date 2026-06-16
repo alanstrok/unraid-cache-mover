@@ -192,6 +192,55 @@ check "D.movies   (still present)"   "/data/Movies/RecentMovie (2024)/RecentMovi
 check "D.watched  (TV filtered out)" "" "$(echo "$OUT_D" | extract watched)"
 
 ########################################################################
+echo "=== Run E: multi-server merge (two Plex servers, same library) ==="
+# Primary = WORK_ACTIVE: user watching S02E05 (movie on-deck too).
+# Server 2 = a different user watching S02E07 who has already watched
+# S02E01-E06. The "keep" sets are unioned across servers, and a file that
+# one server marks watched but another still wants is NOT evicted.
+SERVER2="$HERE/fixtures/plex-multi/server2"
+OUT_E=$(python3 "$SCRIPT" targets --fixture "$WORK_ACTIVE" \
+    --extra-fixture "$SERVER2" \
+    --tv-subfolders "TVRIPS" --movie-subfolders "Movies" \
+    --tv-ondeck-max-age-days 14 --movie-ondeck-max-age-days 7 \
+    --include-movies yes --include-specials no \
+    --precache-episodes 2)
+
+EXPECT_E_ACTIVE="/data/TVRIPS/TestShow/Season 02/TestShow - S02E05.mkv
+/data/TVRIPS/TestShow/Season 02/TestShow - S02E07.mkv"
+# Primary keeps E05+E06+E07; server 2's anchor E07 adds E10 + S03E01.
+EXPECT_E_EPISODES="/data/TVRIPS/TestShow/Season 02/TestShow - S02E05.mkv
+/data/TVRIPS/TestShow/Season 02/TestShow - S02E06.mkv
+/data/TVRIPS/TestShow/Season 02/TestShow - S02E07.mkv
+/data/TVRIPS/TestShow/Season 02/TestShow - S02E10.mkv
+/data/TVRIPS/TestShow/Season 03/TestShow - S03E01.mkv"
+# Server 2 watched E05+E06, but the primary still wants them, so they are
+# removed from the evict set. Only E01-E04 (watched everywhere) survive.
+EXPECT_E_WATCHED="/data/TVRIPS/TestShow/Season 02/TestShow - S02E01.mkv
+/data/TVRIPS/TestShow/Season 02/TestShow - S02E02.mkv
+/data/TVRIPS/TestShow/Season 02/TestShow - S02E03.mkv
+/data/TVRIPS/TestShow/Season 02/TestShow - S02E04.mkv"
+EXPECT_E_MOVIES="/data/Movies/RecentMovie (2024)/RecentMovie.mkv"
+
+check "E.active   (both servers' sessions)" "$EXPECT_E_ACTIVE"   "$(echo "$OUT_E" | extract active)"
+check "E.episodes (union of keep)"          "$EXPECT_E_EPISODES" "$(echo "$OUT_E" | extract episodes)"
+check "E.watched  (E05/E06 NOT evicted)"    "$EXPECT_E_WATCHED"  "$(echo "$OUT_E" | extract watched)"
+check "E.movies   (from primary)"           "$EXPECT_E_MOVIES"   "$(echo "$OUT_E" | extract movies)"
+
+########################################################################
+echo "=== Run F: extra-server spec parsing ==="
+# Malformed extra-server (no token) must be flagged: keeps still emit but
+# eviction is suppressed for the run (safety on incomplete data).
+OUT_F=$(python3 "$SCRIPT" targets --fixture "$WORK_ACTIVE" \
+    --extra-server "bogushost-no-token" \
+    --tv-subfolders "TVRIPS" --movie-subfolders "Movies" \
+    --tv-ondeck-max-age-days 14 --movie-ondeck-max-age-days 7 \
+    --include-movies yes --include-specials no \
+    --precache-episodes 2 2>/dev/null)
+
+check "F.episodes (keeps still emitted)" "$EXPECT_A_EPISODES" "$(echo "$OUT_F" | extract episodes)"
+check "F.watched  (eviction suppressed)" ""                   "$(echo "$OUT_F" | extract watched)"
+
+########################################################################
 echo
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ] || exit 1

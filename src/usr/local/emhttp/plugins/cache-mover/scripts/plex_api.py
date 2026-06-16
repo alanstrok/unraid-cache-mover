@@ -380,6 +380,82 @@ def compute_targets(client, cfg) -> Dict[str, List[Dict[str, Any]]]:
     }
 
 
+def parse_server_spec(spec: str, default_scheme: str,
+                      default_port: str) -> Optional[tuple]:
+    """Parse one extra-server spec into (scheme, host, port, token).
+
+    Accepted pipe-delimited forms (since every server shares the same
+    library/paths, only the endpoint + token differ):
+        host|token                 -> port/scheme inherited from primary
+        host|port|token            -> scheme inherited from primary
+        host|port|token|scheme     -> fully specified
+    Empty port/scheme fields also inherit from the primary. Returns None
+    for an unusable spec (missing host or token).
+    """
+    parts = [p.strip() for p in (spec or "").split("|")]
+    if len(parts) == 2:
+        host, token = parts
+        port, scheme = "", ""
+    elif len(parts) == 3:
+        host, port, token = parts
+        scheme = ""
+    elif len(parts) >= 4:
+        host, port, token, scheme = parts[0], parts[1], parts[2], parts[3]
+    else:
+        return None
+    port = port or default_port
+    scheme = scheme or default_scheme
+    if not host or not token:
+        return None
+    return scheme, host, port, token
+
+
+def merge_targets(results: List[Dict[str, List[Dict[str, Any]]]]
+                  ) -> Dict[str, List[Dict[str, Any]]]:
+    """Merge per-server target sets into a single decision set.
+
+    Keep-sets (active/episodes/movies) are unioned across servers: if ANY
+    server wants a file kept or pre-cached, we keep it. The evict-set
+    (watched) is unioned too, then has the entire keep-set subtracted, so a
+    file that one user finished but another user is still watching (or has
+    queued ahead) is never evicted. Dedupe is by plex_path.
+    """
+    def _union(key: str):
+        seen: set = set()
+        out: List[Dict[str, Any]] = []
+        for r in results:
+            for e in r.get(key, []):
+                p = e.get("plex_path")
+                if not p or p in seen:
+                    continue
+                seen.add(p)
+                out.append(e)
+        return out, seen
+
+    active, active_set = _union("active")
+    episodes, episodes_set = _union("episodes")
+    movies, movies_set = _union("movies")
+
+    keep = active_set | episodes_set | movies_set
+
+    watched: List[Dict[str, Any]] = []
+    watched_seen: set = set()
+    for r in results:
+        for w in r.get("watched", []):
+            p = w.get("plex_path")
+            if not p or p in keep or p in watched_seen:
+                continue
+            watched_seen.add(p)
+            watched.append(w)
+
+    return {
+        "active": active,
+        "episodes": episodes,
+        "movies": movies,
+        "watched": watched,
+    }
+
+
 def main(argv: List[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("command", choices=["targets"])
@@ -399,6 +475,13 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--filetypes", default="")
     ap.add_argument("--exclusions", default="")
     ap.add_argument("--fixture", default="")
+    # Additional Plex servers sharing the same library/paths. Repeatable.
+    # Each value is a pipe-delimited spec (see parse_server_spec).
+    ap.add_argument("--extra-server", dest="extra_server", action="append",
+                    default=[])
+    # Additional fixture directories (offline tests only). Repeatable.
+    ap.add_argument("--extra-fixture", dest="extra_fixture", action="append",
+                    default=[])
     args = ap.parse_args(argv)
 
     args.include_movies = args.include_movies.lower() == "yes"
@@ -411,20 +494,64 @@ def main(argv: List[str]) -> int:
     if not args.movie_ondeck_max_age_days:
         args.movie_ondeck_max_age_days = args.ondeck_max_age_days
 
-    try:
-        if args.fixture:
-            client = FixtureClient(args.fixture)
-        else:
-            if not args.host or not args.token:
-                print("missing host/token", file=sys.stderr)
-                return 1
-            client = PlexClient(args.scheme, args.host, args.port, args.token)
-        result = compute_targets(client, args)
-    except Exception as exc:  # noqa: BLE001
-        print(f"plex_api error: {exc}", file=sys.stderr)
+    # Build the client list: primary first, then any additional servers.
+    # All servers share the same library/paths, so the same cfg/filters
+    # apply to every one of them.
+    clients: List[tuple] = []
+    any_failed = False
+
+    if args.fixture:
+        clients.append(("fixture", FixtureClient(args.fixture)))
+    elif args.host and args.token:
+        clients.append((args.host,
+                        PlexClient(args.scheme, args.host, args.port, args.token)))
+
+    for fx in (args.extra_fixture or []):
+        if not fx:
+            continue
+        label = os.path.basename(fx.rstrip("/")) or fx
+        clients.append((f"fixture:{label}", FixtureClient(fx)))
+
+    for spec in (args.extra_server or []):
+        if not (spec or "").strip():
+            continue
+        parsed = parse_server_spec(spec, args.scheme, args.port)
+        if not parsed:
+            print(f"plex_api: ignoring malformed extra server spec: {spec!r}",
+                  file=sys.stderr)
+            any_failed = True
+            continue
+        scheme, host, port, token = parsed
+        clients.append((host, PlexClient(scheme, host, port, token)))
+
+    if not clients:
+        print("missing host/token", file=sys.stderr)
         return 1
 
-    json.dump(result, sys.stdout)
+    results: List[Dict[str, List[Dict[str, Any]]]] = []
+    for label, client in clients:
+        try:
+            results.append(compute_targets(client, args))
+        except Exception as exc:  # noqa: BLE001
+            any_failed = True
+            print(f"plex_api: server {label} failed: {exc}", file=sys.stderr)
+
+    if not results:
+        print("plex_api: all servers failed", file=sys.stderr)
+        return 1
+
+    merged = merge_targets(results)
+
+    # Safety: if any configured server was unreachable or malformed, our view
+    # of what's wanted is incomplete. Pre-caching from the servers we reached
+    # is harmless, but eviction is not -- a file another server still wants
+    # could be deleted. Suppress eviction for this run.
+    if any_failed:
+        merged["watched"] = []
+        print("plex_api: one or more servers failed; skipping eviction this run",
+              file=sys.stderr)
+
+    json.dump(merged, sys.stdout)
     sys.stdout.write("\n")
     return 0
 

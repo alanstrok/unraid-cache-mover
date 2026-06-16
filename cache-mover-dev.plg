@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "cache-mover">
 <!ENTITY author    "alanstrok">
-<!ENTITY version   "2026.06.12">
+<!ENTITY version   "2026.06.16">
 <!ENTITY launch    "Settings/cache-mover">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/alanstrok/unraid-cache-mover/claude/tv-show-episode-moving-G9EMM">
 <!ENTITY pluginURL "&gitURL;/cache-mover-dev.plg">
@@ -20,6 +20,14 @@
         support="https://github.com/alanstrok/unraid-cache-mover">
 
 <CHANGES>
+ ###2026.06.16 (plex-dev branch)
+  - multi-server: Smart Pre-Cache can now query several Plex servers that share the same library/paths
+  - new UI field "Additional Plex Servers" (mediaserver_extra): space-separated host|token (or host|port|token[|scheme])
+  - keep-sets (playing / on-deck / next episodes) are unioned across all servers
+  - a file is only evicted when NO server still wants it (a file one user finished but another is watching is preserved)
+  - if any extra server is unreachable, pre-caching still runs but eviction is skipped that cycle (safety)
+  - fix: plex_api stderr is no longer folded into the captured JSON, so non-fatal warnings can't corrupt a run
+
  ###2026.06.12 (plex-dev branch)
   - safety: eviction now checks the file exists on the array before deleting from pool
   - files that only exist on the pool (e.g. torrents with hardlinks) are skipped with "evict skip (no array copy)"
@@ -212,7 +220,7 @@
   if test -f "$settingsfile"; then
     echo "| $settingsfile already there, merging any missing new keys"
     # Add any new keys from default that aren't already in the user's file.
-    for key in precache_enabled precache_episodes ondeck_max_age_days precache_specials precache_include_movies sidecar_dash precache_move min_free_space_gb tv_subfolders movie_subfolders tv_ondeck_max_age_days movie_ondeck_max_age_days; do
+    for key in precache_enabled precache_episodes ondeck_max_age_days precache_specials precache_include_movies sidecar_dash precache_move min_free_space_gb tv_subfolders movie_subfolders tv_ondeck_max_age_days movie_ondeck_max_age_days mediaserver_extra; do
       if ! grep -q "^${key}=" "$settingsfile"; then
         line=$(grep "^${key}=" "$def_settingsfile")
         if [ -n "$line" ]; then

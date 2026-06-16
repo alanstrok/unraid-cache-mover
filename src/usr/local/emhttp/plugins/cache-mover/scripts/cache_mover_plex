@@ -74,11 +74,26 @@ min_free_space_gb="${min_free_space_gb:-10}"
 sidecar_dash="${sidecar_dash:-yes}"
 wait_todo="${wait_todo:-120}"
 target_keephours="${target_keephours:-user0}"
+mediaserver_extra="${mediaserver_extra:-}"
 
-### 1. fetch targets from Plex
+### Additional Plex servers sharing the same library/paths (multi-server).
+### Space-separated, one spec per server: host|token, host|port|token, or
+### host|port|token|scheme. Empty port/scheme inherit from the primary.
+extra_server_args=()
+for spec in $mediaserver_extra; do
+    [ -z "$spec" ] && continue
+    extra_server_args+=(--extra-server "$spec")
+done
+
+### 1. fetch targets from Plex (primary + any additional servers).
+### stderr is captured separately so non-fatal warnings (e.g. one server
+### down, a partial allLeaves fetch) are logged without corrupting the JSON
+### that the steps below parse from $targets.
+plex_err=$(mktemp -u /tmp/cm_plex_err.XXXXXX)
 targets=$(python3 "$plex_api" targets \
     --host "$mediaserver_host" --port "$mediaserver_port" \
     --scheme "$mediaserver_url" --token "$mediaserver_key" \
+    "${extra_server_args[@]}" \
     --precache-episodes "$precache_episodes" \
     --ondeck-max-age-days "$ondeck_max_age_days" \
     --tv-ondeck-max-age-days "$tv_ondeck_max_age_days" \
@@ -89,13 +104,17 @@ targets=$(python3 "$plex_api" targets \
     --tv-subfolders "$tv_subfolders" \
     --movie-subfolders "$movie_subfolders" \
     --filetypes "$filetypes" \
-    --exclusions "$exclusions" 2>&1)
+    --exclusions "$exclusions" 2>"$plex_err")
 rc=$?
 if [ $rc -ne 0 ] || [ -z "$targets" ]; then
-    echo "plex unreachable or empty, skipping run ($targets)"
+    echo "plex unreachable or empty, skipping run ($(cat "$plex_err" 2>/dev/null))"
+    rm -f "$plex_err"
     $listupdater
     exit 0
 fi
+### surface any non-fatal warnings to the log
+[ -s "$plex_err" ] && sed 's/^/plex: /' "$plex_err"
+rm -f "$plex_err"
 
 ### helper: rewrite a plex (docker) path into a host path via $rewrite_source
 rewrite_plex_path() {

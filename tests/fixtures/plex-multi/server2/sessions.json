@@ -1,0 +1,23 @@
+{
+  "MediaContainer": {
+    "size": 1,
+    "Metadata": [
+      {
+        "type": "episode",
+        "ratingKey": "5007",
+        "grandparentRatingKey": "1001",
+        "parentIndex": 2,
+        "index": 7,
+        "viewOffset": 90000,
+        "duration": 2700000,
+        "Media": [
+          {
+            "Part": [
+              {"file": "/data/TVRIPS/TestShow/Season 02/TestShow - S02E07.mkv"}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

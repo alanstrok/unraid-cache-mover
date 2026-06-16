@@ -1,0 +1,95 @@
+{
+  "MediaContainer": {
+    "size": 13,
+    "Metadata": [
+      {
+        "type": "episode",
+        "parentIndex": 0,
+        "index": 1,
+        "viewCount": 0,
+        "lastViewedAt": 0,
+        "Media": [{"Part": [{"file": "/data/TVRIPS/TestShow/Specials/TestShow - S00E01.mkv"}]}]
+      },
+      {
+        "type": "episode",
+        "parentIndex": 2,
+        "index": 1,
+        "viewCount": 1,
+        "lastViewedAt": 1700000000,
+        "Media": [{"Part": [{"file": "/data/TVRIPS/TestShow/Season 02/TestShow - S02E01.mkv"}]}]
+      },
+      {
+        "type": "episode",
+        "parentIndex": 2,
+        "index": 2,
+        "viewCount": 1,
+        "lastViewedAt": 1700100000,
+        "Media": [{"Part": [{"file": "/data/TVRIPS/TestShow/Season 02/TestShow - S02E02.mkv"}]}]
+      },
+      {
+        "type": "episode",
+        "parentIndex": 2,
+        "index": 3,
+        "viewCount": 1,
+        "lastViewedAt": 1700200000,
+        "Media": [{"Part": [{"file": "/data/TVRIPS/TestShow/Season 02/TestShow - S02E03.mkv"}]}]
+      },
+      {
+        "type": "episode",
+        "parentIndex": 2,
+        "index": 4,
+        "viewCount": 1,
+        "lastViewedAt": 1700300000,
+        "Media": [{"Part": [{"file": "/data/TVRIPS/TestShow/Season 02/TestShow - S02E04.mkv"}]}]
+      },
+      {
+        "type": "episode",
+        "parentIndex": 2,
+        "index": 5,
+        "viewCount": 1,
+        "lastViewedAt": 1700400000,
+        "Media": [{"Part": [{"file": "/data/TVRIPS/TestShow/Season 02/TestShow - S02E05.mkv"}]}]
+      },
+      {
+        "type": "episode",
+        "parentIndex": 2,
+        "index": 6,
+        "viewCount": 1,
+        "lastViewedAt": 1700500000,
+        "Media": [{"Part": [{"file": "/data/TVRIPS/TestShow/Season 02/TestShow - S02E06.mkv"}]}]
+      },
+      {
+        "type": "episode",
+        "parentIndex": 2,
+        "index": 7,
+        "viewCount": 0,
+        "lastViewedAt": 0,
+        "Media": [{"Part": [{"file": "/data/TVRIPS/TestShow/Season 02/TestShow - S02E07.mkv"}]}]
+      },
+      {
+        "type": "episode",
+        "parentIndex": 2,
+        "index": 10,
+        "viewCount": 0,
+        "lastViewedAt": 0,
+        "Media": [{"Part": [{"file": "/data/TVRIPS/TestShow/Season 02/TestShow - S02E10.mkv"}]}]
+      },
+      {
+        "type": "episode",
+        "parentIndex": 3,
+        "index": 1,
+        "viewCount": 0,
+        "lastViewedAt": 0,
+        "Media": [{"Part": [{"file": "/data/TVRIPS/TestShow/Season 03/TestShow - S03E01.mkv"}]}]
+      },
+      {
+        "type": "episode",
+        "parentIndex": 3,
+        "index": 2,
+        "viewCount": 0,
+        "lastViewedAt": 0,
+        "Media": [{"Part": [{"file": "/data/TVRIPS/TestShow/Season 03/TestShow - S03E02.mkv"}]}]
+      }
+    ]
+  }
+}
