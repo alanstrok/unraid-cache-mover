@@ -45,6 +45,7 @@ $cachemoversettings_mediaserver_host        = isset($cachemoversettings['mediase
 $cachemoversettings_mediaserver_port        = isset($cachemoversettings['mediaserver_port']) ? $cachemoversettings['mediaserver_port'] : "";
 $cachemoversettings_mediaserver_key        = isset($cachemoversettings['mediaserver_key']) ? $cachemoversettings['mediaserver_key'] : "";
 $cachemoversettings_mediaserver_extra        = isset($cachemoversettings['mediaserver_extra']) ? $cachemoversettings['mediaserver_extra'] : "";
+$cachemoversettings_mediaserver_client_id    = isset($cachemoversettings['mediaserver_client_id']) ? $cachemoversettings['mediaserver_client_id'] : "";
 $cachemoversettings_mediaserver_only        = isset($cachemoversettings['mediaserver_only']) ? $cachemoversettings['mediaserver_only'] : "";
 $cachemoversettings_rewrite_source       = isset($cachemoversettings['rewrite_source']) ? $cachemoversettings['rewrite_source'] : "";
 // Plex Pre-Cache
@@ -71,11 +72,122 @@ $cachemoversettings_movie_ondeck_max_age_days = isset($cachemoversettings['movie
         }
         document.getElementById("form").submit();
     }
+
+    // ----- "Sign in with Plex" (PIN-based OAuth + server discovery) -----
+    var PLEX_AUTH = "/plugins/cache-mover/plex_auth.php";
+
+    function _plexStatus(msg) {
+        document.getElementById("plex_status").textContent = msg;
+    }
+    function _plexField(name) {
+        return document.getElementsByName(name)[0];
+    }
+
+    function plexSignIn() {
+        document.getElementById("plex_servers").innerHTML = "";
+        _plexStatus("Starting Plex sign-in...");
+        var cidEl = document.getElementById("mediaserver_client_id");
+        var url = PLEX_AUTH + "?action=pin&client_id=" + encodeURIComponent(cidEl.value || "");
+        fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+            if (d.error) { _plexStatus("Error: " + d.error); return; }
+            cidEl.value = d.client_id;               // persist on next Apply
+            var win = window.open(d.auth_url, "plexauth", "width=820,height=740");
+            if (!win) { _plexStatus("Popup blocked - allow popups for this page and try again."); return; }
+            _plexStatus("Waiting for you to sign in (finish in the Plex popup)...");
+            plexPoll(d.id, d.client_id, 0, win);
+        }).catch(function (e) { _plexStatus("Error: " + e); });
+    }
+
+    function plexPoll(id, cid, tries, win) {
+        if (tries > 90) { _plexStatus("Timed out waiting for sign-in. Try again."); return; }
+        var url = PLEX_AUTH + "?action=poll&id=" + encodeURIComponent(id) +
+                  "&client_id=" + encodeURIComponent(cid);
+        fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+            if (d.error) { _plexStatus("Error: " + d.error); return; }
+            if (d.auth_token) {
+                if (win) { try { win.close(); } catch (e) {} }
+                plexResources(d.auth_token, cid);
+            } else {
+                setTimeout(function () { plexPoll(id, cid, tries + 1, win); }, 2000);
+            }
+        }).catch(function () {
+            setTimeout(function () { plexPoll(id, cid, tries + 1, win); }, 2000);
+        });
+    }
+
+    function plexResources(token, cid) {
+        _plexStatus("Signed in. Discovering your Plex servers...");
+        // POST so the token stays out of the URL / access logs.
+        var body = "action=resources&token=" + encodeURIComponent(token) +
+                   "&client_id=" + encodeURIComponent(cid);
+        fetch(PLEX_AUTH, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: body
+        }).then(function (r) { return r.json(); }).then(function (d) {
+            if (d.error) { _plexStatus("Error: " + d.error); return; }
+            plexRenderServers(d.servers || [], token);
+        }).catch(function (e) { _plexStatus("Error: " + e); });
+    }
+
+    function plexRenderServers(servers, accountToken) {
+        var box = document.getElementById("plex_servers");
+        box.innerHTML = "";
+        if (!servers.length) {
+            _plexStatus("No Plex servers found for this account.");
+            return;
+        }
+        _plexStatus("Found " + servers.length + " server(s). Choose how to use each, then click Apply.");
+        var table = document.createElement("table");
+        servers.forEach(function (s) {
+            var row = table.insertRow();
+            var info = row.insertCell();
+            info.textContent = (s.name || "Plex Server") + "  -  " + s.scheme + "://" +
+                s.host + ":" + s.port + (s.local ? "  (local)" : "") +
+                (s.owned ? "" : "  (shared)");
+            info.style.paddingRight = "14px";
+            var actions = row.insertCell();
+            actions.appendChild(_plexBtn("Set as primary", function () { plexUse(s, "primary", accountToken); }));
+            actions.appendChild(document.createTextNode(" "));
+            actions.appendChild(_plexBtn("Add as extra", function () { plexUse(s, "extra", accountToken); }));
+        });
+        box.appendChild(table);
+    }
+
+    function _plexBtn(label, fn) {
+        var b = document.createElement("input");
+        b.type = "button";
+        b.value = label;
+        b.onclick = fn;
+        return b;
+    }
+
+    function plexUse(s, mode, accountToken) {
+        var token = s.access_token || accountToken;
+        if (mode === "primary") {
+            _plexField("mediaserver_type").value = "plex";
+            _plexField("mediaserver_url").value = s.scheme;
+            _plexField("mediaserver_host").value = s.host;
+            _plexField("mediaserver_port").value = s.port;
+            _plexField("mediaserver_key").value = token;
+            _plexStatus("Primary set to " + s.name + ". Review and click Apply to save.");
+        } else {
+            var extra = _plexField("mediaserver_extra");
+            var spec = (s.scheme === "http")
+                ? (s.host + "|" + s.port + "|" + token)
+                : (s.host + "|" + s.port + "|" + token + "|" + s.scheme);
+            var parts = extra.value.trim() ? extra.value.trim().split(/\s+/) : [];
+            if (parts.indexOf(spec) === -1) { parts.push(spec); }
+            extra.value = parts.join(" ");
+            _plexStatus("Added " + s.name + " as an extra server. Review and click Apply to save.");
+        }
+    }
 </script>
 
 <form markdown="1" id="form" method="POST" action="/update.php" target="progressFrame">
 <input type="hidden" id="file" name="#file" value="/boot/config/plugins/cache-mover/cachemoversettings" />
 <input type="hidden" id="command" name="#command" value="" />
+<input type="hidden" id="mediaserver_client_id" name="mediaserver_client_id" value="<?=$cachemoversettings_mediaserver_client_id;?>" />
 
 
 <div class="title"><span class="left"><i class="fa fa-hand-peace-o title"></i>Cache Mover Setup</span></div>
@@ -184,6 +296,16 @@ Expire Target Dir:
     </blockquote>
 
 <div class="title"><span class="left"><i class="fa fa-hand-peace-o title"></i>Cache Mover Setup - Media Server</span></div>
+
+Sign in with Plex:
+: <input type="button" value="Sign in with Plex" onClick="plexSignIn()">
+  <span id="plex_status" style="margin-left:10px;"></span>
+  <div id="plex_servers" style="margin-top:8px;"></div>
+    <blockquote class='inline_help'>
+        <p>Plex only. Opens a Plex login in a popup so you don't have to find a token by hand</p>
+        <p>After sign-in your Plex servers are listed below: <b>Set as primary</b> fills the fields here, <b>Add as extra</b> appends to "Additional Plex Servers" for multi-server</p>
+        <p>Review the filled fields, then click <b>Apply</b> to save. Needs outbound access to plex.tv</p>
+    </blockquote>
 
 Media Server Type:
 : <input type="text" name="mediaserver_type" class="narrow" maxlength="99" value="<?=$cachemoversettings_mediaserver_type;?>" placeholder="jelly emby plex" >

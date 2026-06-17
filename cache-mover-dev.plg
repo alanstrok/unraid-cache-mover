@@ -21,6 +21,10 @@
 
 <CHANGES>
  ###2026.06.16 (plex-dev branch)
+  - Sign in with Plex: PIN-based OAuth in the settings page, no manual token hunting
+  - after sign-in, your Plex servers are auto-discovered (address/port + per-server token)
+  - one click to "Set as primary" or "Add as extra", filling the multi-server fields for you
+  - new plex_auth.py helper + plex_auth.php proxy; persistent client id (mediaserver_client_id)
   - multi-server: Smart Pre-Cache can now query several Plex servers that share the same library/paths
   - new UI field "Additional Plex Servers" (mediaserver_extra): space-separated host|token (or host|port|token[|scheme])
   - keep-sets (playing / on-deck / next episodes) are unioned across all servers
@@ -105,7 +109,7 @@
 
 <FILE Name="&plgPATH;/&plgNAME;.txz" Run="upgradepkg --install-new">
 <URL>&gitURL;/packages/&name;.txz</URL>
-<MD5>ff538ced4ace021e0b91cb113522b135</MD5>
+<MD5>64d8106cbe8d1d0790dbaff406ad9dbb</MD5>
 </FILE>
 
 <FILE Name="&plgPATH;/fdclose.txz" Run="upgradepkg --install-new" Min="6.12.13">
@@ -220,7 +224,7 @@
   if test -f "$settingsfile"; then
     echo "| $settingsfile already there, merging any missing new keys"
     # Add any new keys from default that aren't already in the user's file.
-    for key in precache_enabled precache_episodes ondeck_max_age_days precache_specials precache_include_movies sidecar_dash precache_move min_free_space_gb tv_subfolders movie_subfolders tv_ondeck_max_age_days movie_ondeck_max_age_days mediaserver_extra; do
+    for key in precache_enabled precache_episodes ondeck_max_age_days precache_specials precache_include_movies sidecar_dash precache_move min_free_space_gb tv_subfolders movie_subfolders tv_ondeck_max_age_days movie_ondeck_max_age_days mediaserver_extra mediaserver_client_id; do
       if ! grep -q "^${key}=" "$settingsfile"; then
         line=$(grep "^${key}=" "$def_settingsfile")
         if [ -n "$line" ]; then
