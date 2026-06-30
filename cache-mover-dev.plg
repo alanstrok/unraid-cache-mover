@@ -4,7 +4,7 @@
 <!ENTITY author    "alanstrok">
 <!ENTITY version   "2026.06.16">
 <!ENTITY launch    "Settings/cache-mover">
-<!ENTITY gitURL    "https://raw.githubusercontent.com/alanstrok/unraid-cache-mover/claude/tv-show-episode-moving-G9EMM">
+<!ENTITY gitURL    "https://raw.githubusercontent.com/alanstrok/unraid-cache-mover/claude/lucid-bell-gx3zk6">
 <!ENTITY pluginURL "&gitURL;/cache-mover-dev.plg">
 <!ENTITY plgPATH   "/boot/config/plugins/&name;">
 <!ENTITY plgNAME   "&name;-&version;-x86_64">
@@ -89,7 +89,7 @@
 
 <!--
   Dev / test build that installs directly from the alanstrok fork on the
-  claude/tv-show-episode-moving-G9EMM branch. Paths (/boot/config/plugins/cache-mover,
+  claude/lucid-bell-gx3zk6 branch. Paths (/boot/config/plugins/cache-mover,
   /usr/local/emhttp/plugins/cache-mover) are identical to the upstream plugin, so this
   installs on top of (or in place of) the official cache-mover. Uninstalling and
   reinstalling the upstream .plg reverts cleanly.
@@ -186,7 +186,7 @@
     for pkg in $python_package $libffi_package $libuni_package; do
       if [ ! -f "/boot/config/plugins/cache-mover/$pkg" ]; then
         echo "| downloading $pkg ..."
-        curl -o /boot/config/plugins/cache-mover/$pkg https://raw.githubusercontent.com/alanstrok/unraid-cache-mover/claude/tv-show-episode-moving-G9EMM/packages/$pkg
+        curl -o /boot/config/plugins/cache-mover/$pkg https://raw.githubusercontent.com/alanstrok/unraid-cache-mover/claude/lucid-bell-gx3zk6/packages/$pkg
       fi
     done
     if [ ! -e /boot/config/plugins/dwpython.plg ] &amp;&amp; ! type python3 >/dev/null 2>&amp;1 &amp;&amp; ! compgen -G "/boot/extra/python*" >/dev/null 2>&amp;1; then
@@ -201,7 +201,7 @@
     echo "| installing extra $unraid_version_break ++ packages"
     if [ ! -f "/boot/config/plugins/cache-mover/$python_package" ]; then
       echo "| downloading $python_package ..."
-      curl -o /boot/config/plugins/cache-mover/$python_package https://raw.githubusercontent.com/alanstrok/unraid-cache-mover/claude/tv-show-episode-moving-G9EMM/packages/$python_package
+      curl -o /boot/config/plugins/cache-mover/$python_package https://raw.githubusercontent.com/alanstrok/unraid-cache-mover/claude/lucid-bell-gx3zk6/packages/$python_package
     fi
     if [ ! -e /boot/config/plugins/dwpython.plg ] &amp;&amp; ! type python3 >/dev/null 2>&amp;1 &amp;&amp; ! compgen -G "/boot/extra/python*" >/dev/null 2>&amp;1; then
       installpkg /boot/config/plugins/cache-mover/$python_package
