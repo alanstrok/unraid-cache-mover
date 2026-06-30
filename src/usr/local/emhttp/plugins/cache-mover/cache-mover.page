@@ -324,14 +324,14 @@ Expire Target Dir:
 <div class="title"><span class="left"><i class="fa fa-hand-peace-o title"></i>Cache Mover Setup - Media Server</span></div>
 
 Sign in with Plex:
-: <input type="button" value="Sign in with Plex" onClick="plexSignIn('primary')">
-  <span id="plex_status" style="margin-left:10px;"></span>
-  <div id="plex_servers" style="margin-top:8px;"></div>
+: <input type="button" value="Sign in with Plex" onClick="plexSignIn('primary')"> <span id="plex_status" style="margin-left:10px;"></span>
     <blockquote class='inline_help'>
         <p>Plex only. Opens a Plex login in a popup so you don't have to find a token by hand</p>
         <p>After sign-in your Plex servers are listed below: <b>Set as primary</b> fills the fields here, <b>Add as extra</b> appends to "Additional Plex Servers" for multi-server</p>
         <p>Review the filled fields, then click <b>Apply</b> to save. Needs outbound access to plex.tv</p>
     </blockquote>
+
+<div id="plex_servers" style="margin:6px 0 14px;"></div>
 
 Media Server Type:
 : <input type="text" name="mediaserver_type" class="narrow" maxlength="99" value="<?=$cachemoversettings_mediaserver_type;?>" placeholder="jelly emby plex" >
@@ -366,14 +366,14 @@ Media Server API Key(Token):
     </blockquote>
 
 Sign in to add another server:
-: <input type="button" value="Sign in with Plex (add server)" onClick="plexSignIn('extra')">
-  <span id="plex_status_extra" style="margin-left:10px;"></span>
-  <div id="plex_servers_extra" style="margin-top:8px;"></div>
+: <input type="button" value="Sign in with Plex (add server)" onClick="plexSignIn('extra')"> <span id="plex_status_extra" style="margin-left:10px;"></span>
     <blockquote class='inline_help'>
         <p>Sign in with the <b>other user's</b> Plex account to add their server to the list below</p>
         <p>If the popup signs you in as the same user, use the account menu inside the Plex popup to switch accounts first</p>
         <p>Each discovered server has an "Add as extra" button; review, then click Apply to save</p>
     </blockquote>
+
+<div id="plex_servers_extra" style="margin:6px 0 14px;"></div>
 
 Additional Plex Servers:
 : <input type="text" name="mediaserver_extra" class="narrow" maxlength="499" value="<?=$cachemoversettings_mediaserver_extra;?>" placeholder="192.168.1.72|TOKEN2 192.168.1.73|TOKEN3" >

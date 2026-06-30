@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "cache-mover">
 <!ENTITY author    "alanstrok">
-<!ENTITY version   "2026.06.16">
+<!ENTITY version   "2026.06.30">
 <!ENTITY launch    "Settings/cache-mover">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/alanstrok/unraid-cache-mover/claude/lucid-bell-gx3zk6">
 <!ENTITY pluginURL "&gitURL;/cache-mover-dev.plg">
@@ -20,6 +20,12 @@
         support="https://github.com/alanstrok/unraid-cache-mover">
 
 <CHANGES>
+ ###2026.06.30 (plex-dev branch)
+  - fix Plex sign-in "SyntaxError: The string did not match the expected pattern": attach the Unraid csrf_token to the fetch() calls (native fetch bypasses Unraid's auto-injection), parse responses defensively, suppress PHP notices
+  - fix settings help text rendering as raw HTML after the sign-in buttons (block-level div was breaking the markdown)
+  - add a dedicated "Sign in with Plex (add server)" button to onboard the second user's server
+  - version bump so Unraid actually pulls the new build
+
  ###2026.06.16 (plex-dev branch)
   - Sign in with Plex: PIN-based OAuth in the settings page, no manual token hunting
   - after sign-in, your Plex servers are auto-discovered (address/port + per-server token)
@@ -109,7 +115,7 @@
 
 <FILE Name="&plgPATH;/&plgNAME;.txz" Run="upgradepkg --install-new">
 <URL>&gitURL;/packages/&name;.txz</URL>
-<MD5>e87e26d430020e4861516543426fde46</MD5>
+<MD5>53581379c3649d2f9e1f10b53a1a2832</MD5>
 </FILE>
 
 <FILE Name="&plgPATH;/fdclose.txz" Run="upgradepkg --install-new" Min="6.12.13">
