@@ -109,7 +109,7 @@
 
 <FILE Name="&plgPATH;/&plgNAME;.txz" Run="upgradepkg --install-new">
 <URL>&gitURL;/packages/&name;.txz</URL>
-<MD5>64d8106cbe8d1d0790dbaff406ad9dbb</MD5>
+<MD5>e87e26d430020e4861516543426fde46</MD5>
 </FILE>
 
 <FILE Name="&plgPATH;/fdclose.txz" Run="upgradepkg --install-new" Min="6.12.13">
