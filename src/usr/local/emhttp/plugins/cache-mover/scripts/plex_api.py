@@ -531,7 +531,13 @@ def main(argv: List[str]) -> int:
     results: List[Dict[str, List[Dict[str, Any]]]] = []
     for label, client in clients:
         try:
-            results.append(compute_targets(client, args))
+            r = compute_targets(client, args)
+            results.append(r)
+            # Per-server summary to stderr; the bash driver routes this to the
+            # syslog, so you can confirm every server is actually reached.
+            print(f"plex_api: server {label}: {len(r['active'])} active, "
+                  f"{len(r['episodes'])} episodes, {len(r['movies'])} movies, "
+                  f"{len(r['watched'])} watched", file=sys.stderr)
         except Exception as exc:  # noqa: BLE001
             any_failed = True
             print(f"plex_api: server {label} failed: {exc}", file=sys.stderr)
@@ -541,6 +547,10 @@ def main(argv: List[str]) -> int:
         return 1
 
     merged = merge_targets(results)
+    print(f"plex_api: merged {len(results)} server(s) -> "
+          f"{len(merged['active'])} active, {len(merged['episodes'])} episodes, "
+          f"{len(merged['movies'])} movies, {len(merged['watched'])} watched",
+          file=sys.stderr)
 
     # Safety: if any configured server was unreachable or malformed, our view
     # of what's wanted is incomplete. Pre-caching from the servers we reached
