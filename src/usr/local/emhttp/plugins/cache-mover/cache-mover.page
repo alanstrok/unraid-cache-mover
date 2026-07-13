@@ -393,7 +393,7 @@ Media Server Mode:
     </blockquote>
 
 Media Server Rewrites:
-: <input type="text" name="rewrite_source" class="narrow" maxlength="99" value="<?=$cachemoversettings_rewrite_source;?>" placeholder="/data:/mnt/user/Media" >
+: <input type="text" name="rewrite_source" class="narrow" maxlength="256" value="<?=$cachemoversettings_rewrite_source;?>" placeholder="/data:/mnt/user/Media" >
     <blockquote class='inline_help'>
         <p>in case there is no 1:1 condition (mnt <> mnt) Mediaserver to host, here the Docker:Host Path like /data:/mnt/user/Media</p>
         <p>please check the mountpoint from your docker, compare how the host path would look like</p>
