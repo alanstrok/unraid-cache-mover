@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "cache-mover">
 <!ENTITY author    "alanstrok">
-<!ENTITY version   "2026.07.11">
+<!ENTITY version   "2026.07.13">
 <!ENTITY launch    "Settings/cache-mover">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/alanstrok/unraid-cache-mover/claude/lucid-bell-gx3zk6">
 <!ENTITY pluginURL "&gitURL;/cache-mover-dev.plg">
@@ -20,6 +20,9 @@
         support="https://github.com/alanstrok/unraid-cache-mover">
 
 <CHANGES>
+ ###2026.07.13 (plex-dev branch)
+  - fix: create the move_excl_list / move_tune_list directory if missing, so the Cached/Excluded lists actually populate (was spamming "mover_excl.txt: No such file or directory" and leaving the lists empty)
+
  ###2026.07.11 (plex-dev branch)
   - multi-server visibility: plex_api now logs a per-server summary (active/episodes/movies/watched) plus the merged total to the syslog, so you can confirm both Plex servers are actually reached
 
@@ -118,7 +121,7 @@
 
 <FILE Name="&plgPATH;/&plgNAME;.txz" Run="upgradepkg --install-new">
 <URL>&gitURL;/packages/&name;.txz</URL>
-<MD5>dd02f7d2dfe9d9afee6530c2ced6ce80</MD5>
+<MD5>8b0389f3a3b0b3edd006e494c855d93d</MD5>
 </FILE>
 
 <FILE Name="&plgPATH;/fdclose.txz" Run="upgradepkg --install-new" Min="6.12.13">

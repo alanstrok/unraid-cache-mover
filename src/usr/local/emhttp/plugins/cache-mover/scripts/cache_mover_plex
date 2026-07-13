@@ -85,6 +85,14 @@ for spec in $mediaserver_extra; do
     extra_server_args+=(--extra-server "$spec")
 done
 
+### Make sure the postprocessing / mover-tuning list directories exist.
+### Otherwise every ">> $move_excl_list" append fails with
+### "No such file or directory" and the Cached / Excluded lists stay empty.
+if [ "$move_excl" == "yes" ]; then
+    [ -n "$move_excl_list" ] && mkdir -p "$(dirname "$move_excl_list")" 2>/dev/null
+    [ -n "$move_tune_list" ] && mkdir -p "$(dirname "$move_tune_list")" 2>/dev/null
+fi
+
 ### 1. fetch targets from Plex (primary + any additional servers).
 ### stderr is captured separately so non-fatal warnings (e.g. one server
 ### down, a partial allLeaves fetch) are logged without corrupting the JSON
